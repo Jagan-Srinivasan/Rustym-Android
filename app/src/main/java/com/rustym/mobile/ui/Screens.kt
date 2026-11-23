@@ -202,6 +202,7 @@ fun SearchScreen(vm: PlayerVM) {
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { doSearch() }),
+            shape = RoundedCornerShape(18.dp),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Accent, cursorColor = Accent),
         )
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent)
@@ -482,7 +483,9 @@ fun MiniPlayer(vm: PlayerVM, onOpen: () -> Unit) {
     }
     Column(
         Modifier.fillMaxWidth()
-            .background(Surface2.copy(alpha = if (ThemeStore.glassEffects) 0.78f else 1f))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Surface2.copy(alpha = if (ThemeStore.glassEffects) 0.82f else 1f))
             .pointerInput(vm) {
                 var drag = 0f
                 detectHorizontalDragGestures(
@@ -493,8 +496,8 @@ fun MiniPlayer(vm: PlayerVM, onOpen: () -> Unit) {
             }
             .clickable(onClick = onOpen)
     ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Art(t.thumb, 44.dp)
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Art(t.thumb, 46.dp, corner = 12.dp)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
                 Text(t.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Dim, style = MaterialTheme.typography.bodySmall)
@@ -505,7 +508,13 @@ fun MiniPlayer(vm: PlayerVM, onOpen: () -> Unit) {
             }
             IconButton(onClick = vm::next) { Icon(Icons.Filled.SkipNext, "Next") }
         }
-        LinearProgressIndicator(progress = { (pos.toFloat() / dur).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Accent, trackColor = Surface1)
+        LinearProgressIndicator(
+            progress = { (pos.toFloat() / dur).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(2.dp).clip(RoundedCornerShape(2.dp)),
+            color = Accent,
+            trackColor = Color.Transparent,
+            gapSize = 0.dp,
+        )
     }
 }
 

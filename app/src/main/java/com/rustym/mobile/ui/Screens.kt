@@ -407,21 +407,21 @@ private fun TrackList(vm: PlayerVM, list: List<Track>, emptyText: String, cleara
 
 /** Icon for an audio output-device type. */
 private fun outputDeviceIcon(type: Int): ImageVector = when (type) {
-    android.media.AudioManager.TYPE_BLUETOOTH_A2DP -> Icons.Filled.Bluetooth
-    android.media.AudioManager.TYPE_WIRED_HEADPHONES,
-    android.media.AudioManager.TYPE_WIRED_HEADSET,
-    android.media.AudioManager.TYPE_USB_HEADSET,
-    android.media.AudioManager.TYPE_USB_DEVICE -> Icons.Filled.Headphones
-    android.media.AudioManager.TYPE_BUILTIN_EARPIECE -> Icons.Filled.Smartphone
+    android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> Icons.Filled.Bluetooth
+    android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+    android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+    android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+    android.media.AudioDeviceInfo.TYPE_USB_DEVICE -> Icons.Filled.Headphones
+    android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> Icons.Filled.Smartphone
     else -> Icons.Filled.Speaker
 }
 
 private fun outputDeviceLabel(type: Int): String = when (type) {
-    android.media.AudioManager.TYPE_BLUETOOTH_A2DP -> "Bluetooth"
-    android.media.AudioManager.TYPE_WIRED_HEADPHONES -> "Wired headphones"
-    android.media.AudioManager.TYPE_WIRED_HEADSET -> "Wired headset"
-    android.media.AudioManager.TYPE_USB_HEADSET, android.media.AudioManager.TYPE_USB_DEVICE -> "USB device"
-    android.media.AudioManager.TYPE_BUILTIN_EARPIECE -> "Phone earpiece"
+    android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth"
+    android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "Wired headphones"
+    android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired headset"
+    android.media.AudioDeviceInfo.TYPE_USB_HEADSET, android.media.AudioDeviceInfo.TYPE_USB_DEVICE -> "USB device"
+    android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "Phone earpiece"
     else -> "Phone speaker"
 }
 
@@ -432,13 +432,13 @@ private fun OutputDevicesDialog(onDismiss: () -> Unit) {
     val am = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
     val devices = remember {
         val wanted = setOf(
-            android.media.AudioManager.TYPE_BLUETOOTH_A2DP,
-            android.media.AudioManager.TYPE_WIRED_HEADPHONES,
-            android.media.AudioManager.TYPE_WIRED_HEADSET,
-            android.media.AudioManager.TYPE_USB_HEADSET,
-            android.media.AudioManager.TYPE_USB_DEVICE,
-            android.media.AudioManager.TYPE_BUILTIN_SPEAKER,
-            android.media.AudioManager.TYPE_BUILTIN_EARPIECE,
+            android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+            android.media.AudioDeviceInfo.TYPE_USB_DEVICE,
+            android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
         )
         am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).filter { it.type in wanted }.toList()
     }
@@ -451,7 +451,7 @@ private fun OutputDevicesDialog(onDismiss: () -> Unit) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(outputDeviceIcon(d.type), null, Modifier.size(22.dp), tint = Accent)
                         Column(Modifier.padding(start = 14.dp)) {
-                            Text(d.productName.ifBlank { outputDeviceLabel(d.type) }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(d.productName.ifBlank { outputDeviceLabel(d.type) }.toString(), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(outputDeviceLabel(d.type), color = Dim, style = MaterialTheme.typography.bodySmall)
                         }
                     }

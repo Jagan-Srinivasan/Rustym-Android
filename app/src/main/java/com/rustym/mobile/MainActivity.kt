@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -112,7 +114,7 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
             bottomBar = {
                 Column {
                     MiniPlayer(vm) { showPlayer = true }
-                    NavigationBar(containerColor = Surface2) {
+                    NavigationBar(containerColor = Surface2, modifier = Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(26.dp))) {
                         Tab.entries.forEach { t ->
                             NavigationBarItem(
                                 selected = tab == t,

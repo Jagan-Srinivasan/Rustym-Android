@@ -46,6 +46,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
@@ -54,6 +55,9 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Edit
@@ -124,7 +128,15 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Column(Modifier.weight(1f)) {
                     val first = vm.account?.name?.takeIf { it != "Signed in" }?.substringBefore(' ')
                     Text(if (first != null) "Hi, $first" else "Rustym", style = MaterialTheme.typography.headlineMedium, color = Accent)
-                    Text("No ads. Just music.", color = Dim)
+                    Text(
+                        when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
+                            in 5..11 -> "Good morning. Start the day with music."
+                            in 12..16 -> "Good afternoon. Your music is waiting."
+                            in 17..21 -> "Good evening. Unwind with a few songs."
+                            else -> "Up late? Nights sound better with music."
+                        },
+                        color = Dim,
+                    )
                 }
                 AccountButton(vm, onLogin)
             }
@@ -392,6 +404,71 @@ private fun TrackList(vm: PlayerVM, list: List<Track>, emptyText: String, cleara
 
 // ---------------------------------------------------------------- Mini player
 
+/** Icon for an audio output-device type. */
+private fun outputDeviceIcon(type: Int): ImageVector = when (type) {
+    android.media.AudioManager.TYPE_BLUETOOTH_A2DP -> Icons.Filled.Bluetooth
+    android.media.AudioManager.TYPE_WIRED_HEADPHONES,
+    android.media.AudioManager.TYPE_WIRED_HEADSET,
+    android.media.AudioManager.TYPE_USB_HEADSET,
+    android.media.AudioManager.TYPE_USB_DEVICE -> Icons.Filled.Headphones
+    android.media.AudioManager.TYPE_BUILTIN_EARPIECE -> Icons.Filled.Smartphone
+    else -> Icons.Filled.Speaker
+}
+
+private fun outputDeviceLabel(type: Int): String = when (type) {
+    android.media.AudioManager.TYPE_BLUETOOTH_A2DP -> "Bluetooth"
+    android.media.AudioManager.TYPE_WIRED_HEADPHONES -> "Wired headphones"
+    android.media.AudioManager.TYPE_WIRED_HEADSET -> "Wired headset"
+    android.media.AudioManager.TYPE_USB_HEADSET, android.media.AudioManager.TYPE_USB_DEVICE -> "USB device"
+    android.media.AudioManager.TYPE_BUILTIN_EARPIECE -> "Phone earpiece"
+    else -> "Phone speaker"
+}
+
+/** Lists the audio output devices (speaker, wired, Bluetooth, USB) attached to the phone. */
+@Composable
+private fun OutputDevicesDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val am = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+    val devices = remember {
+        val wanted = setOf(
+            android.media.AudioManager.TYPE_BLUETOOTH_A2DP,
+            android.media.AudioManager.TYPE_WIRED_HEADPHONES,
+            android.media.AudioManager.TYPE_WIRED_HEADSET,
+            android.media.AudioManager.TYPE_USB_HEADSET,
+            android.media.AudioManager.TYPE_USB_DEVICE,
+            android.media.AudioManager.TYPE_BUILTIN_SPEAKER,
+            android.media.AudioManager.TYPE_BUILTIN_EARPIECE,
+        )
+        am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).filter { it.type in wanted }.toList()
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Output devices") },
+        text = {
+            Column {
+                devices.forEach { d ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(outputDeviceIcon(d.type), null, Modifier.size(22.dp), tint = Accent)
+                        Column(Modifier.padding(start = 14.dp)) {
+                            Text(d.productName.ifBlank { outputDeviceLabel(d.type) }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(outputDeviceLabel(d.type), color = Dim, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                TextButton(onClick = {
+                    runCatching {
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS))
+                    }
+                    onDismiss()
+                }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text("Bluetooth settings", color = Accent)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = Accent) } },
+    )
+}
+
 @Composable
 fun MiniPlayer(vm: PlayerVM, onOpen: () -> Unit) {
     val t = vm.current ?: return
@@ -457,6 +534,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableStateOf(0f) }
     var showQueue by remember { mutableStateOf(false) }
+    var showOutput by remember { mutableStateOf(false) }
 
     LaunchedEffect(t?.id, vm.isPlaying) {
         while (true) {
@@ -478,8 +556,8 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 Text(if (showQueue) "Up next" else "Now Playing", color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleMedium)
                 Text(if (showQueue) "Your queue" else vm.queue.takeIf { it.size > 1 }?.let { "Track ${vm.queueIndex + 1} of ${it.size}" } ?: "Rustym", color = Dim, style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = { showQueue = !showQueue }) {
-                Icon(Icons.Filled.Headphones, if (showQueue) "Back to player" else "Open queue", Modifier.size(26.dp), tint = Accent)
+            IconButton(onClick = { showOutput = true }) {
+                Icon(Icons.Filled.Headphones, "Output devices", Modifier.size(26.dp), tint = Accent)
             }
         }
 
@@ -569,10 +647,17 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             value = if (dragging) dragValue else (pos.toFloat() / dur).coerceIn(0f, 1f),
             onValueChange = { dragging = true; dragValue = it },
             onValueChangeFinished = { vm.seekTo((dragValue * dur).toLong()); pos = (dragValue * dur).toLong(); dragging = false },
-            colors = SliderDefaults.colors(
-                thumbColor = Accent, activeTrackColor = Accent, inactiveTrackColor = Dim.copy(alpha = 0.28f),
-                activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent,
-            ),
+            // slim, premium slider: hairline track with a small thumb
+            thumb = {
+                Box(Modifier.size(14.dp).clip(CircleShape).background(Accent))
+            },
+            track = { state ->
+                val frac = state.value.coerceIn(0.004f, 1f)
+                Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.CenterStart) {
+                    Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(Dim.copy(alpha = 0.25f)))
+                    Box(Modifier.fillMaxWidth(frac).height(3.dp).clip(CircleShape).background(Accent))
+                }
+            },
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
             Text(fmtTime(if (dragging) (dragValue * dur).toLong() else pos), color = Dim, style = MaterialTheme.typography.bodySmall)
@@ -603,6 +688,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
         // utility row: shuffle · speed · repeat
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = vm::toggleShuffle) { Icon(Icons.Filled.Shuffle, "Shuffle", tint = if (vm.shuffle) Accent else Dim) }
+            IconButton(onClick = { showQueue = !showQueue }) { Icon(Icons.Filled.QueueMusic, "Queue", tint = if (showQueue) Accent else Dim) }
             val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
             TextButton(onClick = { vm.updatePlaybackSpeed(speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]) }, contentPadding = PaddingValues(horizontal = 10.dp)) {
                 Text("${vm.playbackSpeed}x", color = Accent, style = MaterialTheme.typography.labelLarge)
@@ -615,6 +701,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             }
         }
         Box(Modifier.size(14.dp))
+        if (showOutput) OutputDevicesDialog { showOutput = false }
     }
     }
 }

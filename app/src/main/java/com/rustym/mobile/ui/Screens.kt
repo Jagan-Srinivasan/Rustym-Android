@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.QueueMusic
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,7 +56,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material.icons.filled.AccountCircle
@@ -469,13 +474,13 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
         Column(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 20.dp)) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) { Icon(Icons.Filled.KeyboardArrowDown, "Close", Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onBackground) }
-            Text(if (showQueue) "Up next" else "Now playing", Modifier.weight(1f), textAlign = TextAlign.Center, color = Dim)
-            TextButton(onClick = {
-                val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-                val nextSpeed = speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]
-                vm.updatePlaybackSpeed(nextSpeed)
-            }) { Text("${vm.playbackSpeed}x", color = Accent) }
-            TextButton(onClick = { showQueue = !showQueue }) { Text(if (showQueue) "Player" else "Queue", color = Accent) }
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(if (showQueue) "Up next" else "Now Playing", color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleMedium)
+                Text(if (showQueue) "Your queue" else vm.queue.takeIf { it.size > 1 }?.let { "Track ${vm.queueIndex + 1} of ${it.size}" } ?: "Rustym", color = Dim, style = MaterialTheme.typography.bodySmall)
+            }
+            IconButton(onClick = { showQueue = !showQueue }) {
+                Icon(Icons.Filled.Headphones, if (showQueue) "Back to player" else "Open queue", Modifier.size(26.dp), tint = Accent)
+            }
         }
 
         if (showQueue) {
@@ -486,62 +491,53 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             }
         } else if (t != null) {
             Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), 300.dp, corner = 20.dp)
-                Spacer(Modifier.height(12.dp))
+                Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), 320.dp, corner = 26.dp)
+            }
+            var editLyrics by remember(t.id) { mutableStateOf(false) }
+            val lyricLines = remember(vm.lyricsText) { vm.syncedLyricLines() }
+            val plainLines = remember(vm.lyricsText) { vm.plainLyrics().lines().filter { it.isNotBlank() } }
+            val activeIndex = vm.activeLyricIndex(pos)
+            // Plain (unsynced) lyrics still show one line, roughly placed by progress.
+            val plainIndex = if (lyricLines.isEmpty() && plainLines.isNotEmpty() && dur > 1L) {
+                ((pos.toFloat() / dur).coerceIn(0f, 0.999f) * plainLines.size).toInt()
+            } else -1
+            val currentLine: String? = when {
+                lyricLines.isNotEmpty() -> lyricLines.getOrNull(activeIndex.coerceAtLeast(0))?.second
+                plainIndex >= 0 -> plainLines.getOrNull(plainIndex)
+                else -> null
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp, start = 4.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f).height(24.dp), contentAlignment = Alignment.CenterStart) {
+                    when {
+                        lyricLines.isNotEmpty() && activeIndex < 0 -> LyricsGapDots()
+                        currentLine != null -> Text(
+                            currentLine,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.pointerInput(t.id) { detectTapGestures(onLongPress = { editLyrics = true }) },
+                        )
+                    }
+                }
+                if (vm.lyricsText.isNotBlank()) {
+                    IconButton(onClick = { editLyrics = true }, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Filled.Edit, "Edit lyrics", Modifier.size(16.dp), tint = Dim)
+                    }
+                }
             }
             // title + artist on the left, favourite heart on the right (like Spotify / YT Music)
             val fav = vm.isFavorite(t.id)
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                    Text(t.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).padding(start = 2.dp)) {
+                    Text(t.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onBackground)
-                    Text(t.artist, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                    Text(t.artist, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 3.dp))
                 }
                 IconButton(onClick = { vm.toggleFavorite(t) }, modifier = Modifier.size(48.dp)) {
                     Icon(
                         if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                         if (fav) "Remove from favourites" else "Add to favourites",
                         Modifier.size(28.dp), tint = if (fav) Accent else Dim,
-                    )
-                }
-            }
-            var editLyrics by remember(t.id) { mutableStateOf(false) }
-            val lyricLines = remember(vm.lyricsText) { vm.syncedLyricLines() }
-            val plainLines = remember(vm.lyricsText) { vm.plainLyrics().lines().filter { it.isNotBlank() } }
-            val activeIndex = vm.activeLyricIndex(pos)
-            // Plain (unsynced) lyrics still show one line at a time, roughly placed by progress.
-            val plainIndex = if (lyricLines.isEmpty() && plainLines.isNotEmpty() && dur > 1L) {
-                ((pos.toFloat() / dur).coerceIn(0f, 0.999f) * plainLines.size).toInt()
-            } else -1
-            Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 3.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("LYRICS", color = Accent, style = MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.weight(1f))
-                Text(vm.lyricsSource.ifBlank { if (vm.lyricsLoading) "Searching sources" else "" }, color = Dim, style = MaterialTheme.typography.labelSmall)
-                TextButton(onClick = { editLyrics = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                    Text("Edit", color = Accent, style = MaterialTheme.typography.labelMedium)
-                }
-            }
-            // A single lyric line above the song title - only the line that is being sung right now.
-            Box(Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
-                when {
-                    vm.lyricsLoading -> CircularProgressIndicator(Modifier.size(20.dp), color = Accent, strokeWidth = 2.dp)
-                    vm.lyricsNotFound || vm.lyricsText.isBlank() -> Text("Lyrics not found", color = Dim, style = MaterialTheme.typography.bodySmall)
-                    lyricLines.isNotEmpty() -> {
-                        if (activeIndex < 0) LyricsGapDots()
-                        else Text(
-                            lyricLines[activeIndex.coerceIn(0, lyricLines.lastIndex)].second,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
-                            style = MaterialTheme.typography.bodyLarge,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    plainLines.isNotEmpty() -> Text(
-                        plainLines[plainIndex.coerceIn(0, plainLines.lastIndex)],
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -585,17 +581,32 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
         }
 
         // transport
-        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = vm::toggleShuffle) { Icon(Icons.Filled.Shuffle, "Shuffle", tint = if (vm.shuffle) Accent else Dim) }
-            IconButton(onClick = vm::previous, modifier = Modifier.size(56.dp)) { Icon(Icons.Filled.SkipPrevious, "Previous", Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onBackground) }
-            Box(Modifier.size(72.dp).background(Accent, androidx.compose.foundation.shape.CircleShape), Alignment.Center) {
-                if (vm.isLoading) CircularProgressIndicator(modifier = Modifier.size(32.dp), color = androidx.compose.ui.graphics.Color.White, strokeWidth = 3.dp)
-                else IconButton(onClick = vm::togglePlay, modifier = Modifier.size(72.dp)) {
-                    Icon(if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (vm.isPlaying) "Pause" else "Play",
-                        Modifier.size(40.dp), tint = androidx.compose.ui.graphics.Color.White)
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(72.dp, 56.dp).clip(RoundedCornerShape(50)).background(Accent), contentAlignment = Alignment.Center) {
+                IconButton(onClick = vm::previous, modifier = Modifier.size(72.dp, 56.dp)) {
+                    Icon(Icons.Filled.SkipPrevious, "Previous", Modifier.size(32.dp), tint = Color.Black.copy(alpha = 0.72f))
                 }
             }
-            IconButton(onClick = vm::next, modifier = Modifier.size(56.dp)) { Icon(Icons.Filled.SkipNext, "Next", Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onBackground) }
+            Box(Modifier.size(116.dp, 64.dp).clip(RoundedCornerShape(50)).background(Accent), contentAlignment = Alignment.Center) {
+                if (vm.isLoading) CircularProgressIndicator(Modifier.size(30.dp), color = Color.Black.copy(alpha = 0.72f), strokeWidth = 3.dp)
+                else IconButton(onClick = vm::togglePlay, modifier = Modifier.size(116.dp, 64.dp)) {
+                    Icon(if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (vm.isPlaying) "Pause" else "Play",
+                        Modifier.size(36.dp), tint = Color.Black.copy(alpha = 0.72f))
+                }
+            }
+            Box(Modifier.size(72.dp, 56.dp).clip(RoundedCornerShape(50)).background(Accent), contentAlignment = Alignment.Center) {
+                IconButton(onClick = vm::next, modifier = Modifier.size(72.dp, 56.dp)) {
+                    Icon(Icons.Filled.SkipNext, "Next", Modifier.size(32.dp), tint = Color.Black.copy(alpha = 0.72f))
+                }
+            }
+        }
+        // utility row: shuffle · speed · repeat
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = vm::toggleShuffle) { Icon(Icons.Filled.Shuffle, "Shuffle", tint = if (vm.shuffle) Accent else Dim) }
+            val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+            TextButton(onClick = { vm.updatePlaybackSpeed(speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]) }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                Text("${vm.playbackSpeed}x", color = Accent, style = MaterialTheme.typography.labelLarge)
+            }
             IconButton(onClick = vm::cycleRepeat) {
                 Icon(
                     if (vm.repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
@@ -603,7 +614,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 )
             }
         }
-        Box(Modifier.size(20.dp))
+        Box(Modifier.size(14.dp))
     }
     }
 }
@@ -811,7 +822,7 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
             SettingsCard {
                 Text("Rustym for Android", style = MaterialTheme.typography.titleMedium)
                 Text("Version 1.3.0 · Music, without distractions.", color = Dim, style = MaterialTheme.typography.bodySmall)
-                Text("Lyrics come from Unison, Better Lyrics, KuGou, LRCLIB, Lyrics.ovh and friends. Audio streams directly from YouTube Music.", color = Dim, style = MaterialTheme.typography.bodySmall)
+                Text("Lyrics come from Unison, Better Lyrics, KuGou, LRCLIB, NetEase and Lyrics.ovh. Audio streams directly from YouTube Music.", color = Dim, style = MaterialTheme.typography.bodySmall)
             }
         }
         item { Spacer(Modifier.height(16.dp)) }

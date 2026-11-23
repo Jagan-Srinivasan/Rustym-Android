@@ -744,7 +744,7 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Text("Start screen", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
                 Text("Choose where Rustym opens", color = Dim, style = MaterialTheme.typography.bodySmall)
                 val tabs = listOf("Home", "Search", "Device", "Library")
-                SettingsChips(tabs, vm.startTab.coerceIn(0, tabs.lastIndex)) { i -> vm.setStartTab(i) }
+                SettingsChips(tabs, vm.startTab.coerceIn(0, tabs.lastIndex)) { i -> vm.chooseStartTab(i) }
             }
         }
 

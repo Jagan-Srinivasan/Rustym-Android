@@ -331,7 +331,7 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
 
     /** Which screen Rustym opens on: 0 Home, 1 Search, 2 Device, 3 Library. */
     var startTab by mutableIntStateOf(settings.getInt("start_tab", 0)); private set
-    fun setStartTab(index: Int) {
+    fun chooseStartTab(index: Int) {
         startTab = index.coerceIn(0, 3)
         settings.edit().putInt("start_tab", startTab).apply()
     }

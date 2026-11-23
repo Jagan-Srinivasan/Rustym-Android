@@ -420,7 +420,64 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
                     accept("LRCLIB", json.optString("syncedLyrics"))
                     accept("LRCLIB", json.optString("plainLyrics"), "plain")
                 }
-                // 4. lyrics.ovh is plain text only; last-resort fallback.
+                // 4. NetEase Cloud Music: strong Asian catalogue, decent Western coverage.
+                val neteaseSearch = request(HttpUrl.Builder().scheme("https").host("music.163.com").addPathSegments("api/search/get/web")
+                    .addQueryParameter("s", "${track.title} ${track.artist}".trim()).addQueryParameter("type", "1").addQueryParameter("limit", "8").build())
+                val neteaseSongs = neteaseSearch?.optJSONObject("result")?.optJSONArray("songs")
+                if (neteaseSongs != null && neteaseSongs.length() > 0) {
+                    var song: JSONObject? = null
+                    var bestScore = Long.MIN_VALUE
+                    for (i in 0 until neteaseSongs.length()) {
+                        val c = neteaseSongs.optJSONObject(i) ?: continue
+                        var score = 0L
+                        val name = c.optString("name")
+                        if (name.contains(track.title, ignoreCase = true) || track.title.contains(name, ignoreCase = true)) score += 1_000_000L
+                        val d = c.optLong("duration", 0L) / 1000L
+                        if (track.durationSec in 1L..3600L && d in 1L..3600L) score += 1000L - kotlin.math.abs(d - track.durationSec).coerceAtMost(999L)
+                        val artists = c.optJSONArray("artists")
+                        if (artists != null) {
+                            for (j in 0 until artists.length()) {
+                                val an = artists.optJSONObject(j)?.optString("name").orEmpty()
+                                if (an.isNotBlank() && track.artist.contains(an, ignoreCase = true)) score += 400_000L
+                            }
+                        }
+                        if (score > bestScore) { bestScore = score; song = c }
+                    }
+                    song?.optLong("id", 0L)?.takeIf { it > 0L }?.let { nid ->
+                        request(HttpUrl.Builder().scheme("https").host("music.163.com").addPathSegments("api/song/lyric")
+                            .addQueryParameter("id", nid.toString()).addQueryParameter("lv", "-1").addQueryParameter("tv", "-1").build())
+                            ?.let { json -> accept("NetEase", json.optJSONObject("lrc")?.optString("lyric")) }
+                    }
+                }
+                // 5. KuGou (direct krcs endpoint): the service behind Better Lyrics, queried ourselves.
+                val kugouSearch = request(HttpUrl.Builder().scheme("https").host("krcs.kugou.com").addPathSegment("search")
+                    .addQueryParameter("keyword", "${track.artist} ${track.title}".trim())
+                    .apply { track.durationSec.takeIf { it in 1L..3600L }?.let { addQueryParameter("duration", (it * 1000L).toString()) } }
+                    .addQueryParameter("man", "yes").build())
+                val kugouList = kugouSearch?.optJSONObject("data")?.optJSONArray("lists")
+                if (kugouList != null && kugouList.length() > 0) {
+                    var hit: JSONObject? = null
+                    var bestScore = Long.MIN_VALUE
+                    for (i in 0 until kugouList.length()) {
+                        val c = kugouList.optJSONObject(i) ?: continue
+                        var score = 0L
+                        val name = c.optString("songname", c.optString("song"))
+                        if (name.contains(track.title, ignoreCase = true) || track.title.contains(name, ignoreCase = true)) score += 1_000_000L
+                        val d = c.optLong("duration", 0L) / 1000L
+                        if (track.durationSec in 1L..3600L && d in 1L..3600L) score += 1000L - kotlin.math.abs(d - track.durationSec).coerceAtMost(999L)
+                        val singer = c.optString("singername", c.optString("singer"))
+                        if (singer.isNotBlank() && track.artist.contains(singer.substringBefore("/"), ignoreCase = true)) score += 400_000L
+                        if (score > bestScore) { bestScore = score; hit = c }
+                    }
+                    hit?.let { h ->
+                        val hash = h.optString("hash").takeIf { it.isNotBlank() } ?: return@let
+                        request(HttpUrl.Builder().scheme("https").host("krcs.kugou.com").addPathSegment("download")
+                            .addQueryParameter("man", "yes").addQueryParameter("fmt", "lrc").addQueryParameter("hash", hash)
+                            .addQueryParameter("album_id", h.optString("album_id")).addQueryParameter("crc", h.optString("crc")).build())
+                            ?.let { json -> accept("KuGou", json.optJSONObject("content")?.optString("content")) }
+                    }
+                }
+                // 6. lyrics.ovh is plain text only; last-resort fallback.
                 if (track.artist.isNotBlank()) {
                     request(HttpUrl.Builder().scheme("https").host("api.lyrics.ovh").addPathSegments("v1")
                         .addPathSegment(track.artist).addPathSegment(track.title).build())?.let { json ->

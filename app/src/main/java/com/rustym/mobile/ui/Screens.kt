@@ -9,6 +9,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1019,6 +1021,7 @@ private fun LyricsGapDots() {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
     val t = vm.current
     var pos by remember { mutableLongStateOf(0L) }
@@ -1108,11 +1111,19 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 }
             }
             // title + artist on the left, favourite heart on the right (like Spotify / YT Music)
+            // Single fixed line: long titles end with "…"; tap the title to scroll the full text.
             val fav = vm.isFavorite(t.id)
+            var titleScroll by remember(t.id) { mutableStateOf(false) }
             Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f).padding(start = 2.dp)) {
-                    Text(t.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        t.title,
+                        style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier
+                            .clickable { titleScroll = !titleScroll }
+                            .then(if (titleScroll) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
+                    )
                     Text(t.artist, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 3.dp))
                 }
                 IconButton(onClick = { vm.toggleFavorite(t) }, modifier = Modifier.size(48.dp)) {

@@ -27,7 +27,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import com.rustym.mobile.data.Track
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermitimport com.rustym.mobile.data.Track
 import com.rustym.mobile.data.SpotifyImport
 import com.rustym.mobile.data.toMediaItem
 import com.rustym.mobile.data.toTrack
@@ -761,11 +765,11 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
                 val wanted = sp.tracks.take(100)
                 val total = wanted.size
                 val done = java.util.concurrent.atomic.AtomicInteger(0)
-                val permits = kotlinx.coroutines.sync.Semaphore(4)
-                val matched = kotlinx.coroutines.coroutineScope {
+                val permits = Semaphore(4)
+                val matched: List<Track?> = coroutineScope {
                     wanted.map { t ->
-                        kotlinx.coroutines.async(Dispatchers.IO) {
-                            kotlinx.coroutines.sync.withPermit(permits) {
+                        async(Dispatchers.IO) {
+                            withPermit(permits) {
                                 val found = runCatching {
                                     Yt.search("${t.title} ${t.artists}").firstOrNull()
                                 }.getOrNull()
@@ -775,7 +779,7 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
                         }
                     }.awaitAll()
                 }
-                val tracks = matched.filterNotNull()
+                val tracks: List<Track> = matched.filterNotNull()
                 importProgress = null
                 if (tracks.isEmpty()) {
                     message = "Couldn't match any songs from that playlist - try another."

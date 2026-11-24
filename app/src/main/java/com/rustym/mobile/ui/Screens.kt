@@ -968,7 +968,7 @@ fun SoundControls() {
                 Text("Equalizer", style = MaterialTheme.typography.titleSmall)
                 Text("Shape the sound across ${AudioFx.bandCount} bands", color = Dim, style = MaterialTheme.typography.bodySmall)
             }
-            Switch(checked = AudioFx.eqEnabled, onCheckedChange = { AudioFx.setEqEnabled(it) })
+            Switch(checked = AudioFx.eqEnabled, onCheckedChange = { AudioFx.setEqualizerEnabled(it) })
         }
         if (AudioFx.eqEnabled && AudioFx.bandGains.isNotEmpty()) {
             Row(

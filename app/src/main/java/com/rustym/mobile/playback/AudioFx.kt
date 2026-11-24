@@ -89,7 +89,7 @@ object AudioFx {
         }
     }
 
-    fun setEqEnabled(on: Boolean) {
+    fun setEqualizerEnabled(on: Boolean) {
         eqEnabled = on
         runCatching { equalizer?.enabled = on }
         prefs?.edit()?.putBoolean("eq_enabled", on)?.apply()

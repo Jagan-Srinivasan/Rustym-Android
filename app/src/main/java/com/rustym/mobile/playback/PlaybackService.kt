@@ -277,9 +277,12 @@ class PlaybackService : MediaSessionService() {
 
     /** Paint the home-screen widget with the current song / play state. */
     private fun updateWidget(player: Player) {
+        // ExoPlayer may only be touched on the thread it was created on (main); read state here,
+        // then hand the values to the IO scope which decodes the artwork.
+        val track = runCatching { player.currentMediaItem?.toTrack() }.getOrNull()
+        val playing = runCatching { player.isPlaying }.getOrDefault(false)
         serviceScope.launch {
-            val track = runCatching { player.currentMediaItem?.toTrack() }.getOrNull()
-            PlayerWidget.update(this@PlaybackService, track, player.isPlaying)
+            PlayerWidget.update(this@PlaybackService, track, playing)
         }
     }
 

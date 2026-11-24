@@ -1238,7 +1238,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 )
             }
         }
-        Spacer(Modifier.size(28.dp))
+        Spacer(Modifier.size(48.dp))
         if (showOutput) OutputDevicesDialog(vm) { showOutput = false }
         if (showFx) SoundFxDialog { showFx = false }
         if (showAddTo) AddToPlaylistDialog(vm) { showAddTo = false }

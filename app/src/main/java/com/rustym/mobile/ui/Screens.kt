@@ -341,7 +341,7 @@ fun SearchScreen(vm: PlayerVM) {
     Column(Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = query,
-            onValueChange = { query = it; if (it.isBlank()) results = null },
+            onValueChange = { query = it; results = null; error = null },
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
             placeholder = { Text("Songs, artists, moods…") },
             leadingIcon = { Icon(Icons.Filled.Search, null, tint = if (query.isNotBlank()) Accent else Dim) },

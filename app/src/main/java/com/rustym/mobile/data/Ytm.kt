@@ -268,10 +268,13 @@ object Ytm {
             val items = section.optJSONArray("contents") ?: continue
             for (j in 0 until items.length()) {
                 val s = items.optJSONObject(j)?.optJSONObject("searchSuggestionRenderer") ?: continue
-                val runs = s.optJSONObject("suggestion")?.optJSONObject("suggestionRenderer")
-                    ?.optJSONObject("text")?.optJSONArray("runs") ?: continue
-                val text = (0 until runs.length()).joinToString("") { k -> runs.optJSONObject(k)?.optString("text").orEmpty() }.trim()
-                if (text.isNotBlank() && !out.contains(text)) out.add(text)
+                // Prefer the clean query from the navigation endpoint; fall back to the display runs.
+                val fromEndpoint = s.optJSONObject("navigationEndpoint")?.optJSONObject("searchEndpoint")?.optString("query")?.trim()?.takeIf { it.isNotEmpty() }
+                val text = fromEndpoint
+                    ?: s.optJSONObject("suggestion")?.optJSONArray("runs")
+                        ?.let { runs -> (0 until runs.length()).joinToString("") { k -> runs.optJSONObject(k)?.optString("text").orEmpty() } }
+                        ?.trim()
+                if (!text.isNullOrBlank() && !out.contains(text)) out.add(text)
             }
         }
         return out

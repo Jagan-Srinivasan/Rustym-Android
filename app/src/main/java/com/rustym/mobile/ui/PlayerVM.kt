@@ -63,7 +63,6 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
     var current by mutableStateOf<Track?>(null); private set
     var isPlaying by mutableStateOf(false); private set
     var isLoading by mutableStateOf(false); private set
-    var volume by mutableStateOf(1f); private set
     var shuffle by mutableStateOf(false); private set
     var repeatMode by mutableIntStateOf(Player.REPEAT_MODE_OFF); private set
     var queue by mutableStateOf<List<Track>>(emptyList()); private set
@@ -182,7 +181,6 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         isPlaying = c.isPlaying
         isLoading = c.playbackState == Player.STATE_BUFFERING
         shuffle = c.shuffleModeEnabled
-        volume = c.volume
         repeatMode = c.repeatMode
         val oldTrackId = current?.id
         current = c.currentMediaItem?.toTrack()
@@ -293,12 +291,6 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         controller?.addMediaItem(t.toMediaItem())
         prefetchTracks(listOf(t))
         message = "Added to queue"
-    }
-
-    /** Device/player volume (0..1), exposed for the Now Playing volume slider. */
-    fun setPlayerVolume(v: Float) {
-        volume = v.coerceIn(0f, 1f)
-        runCatching { controller?.volume = volume }
     }
 
     fun togglePlay() {

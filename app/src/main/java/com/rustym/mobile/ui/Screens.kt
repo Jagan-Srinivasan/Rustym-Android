@@ -43,6 +43,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -111,6 +112,9 @@ import androidx.media3.common.Player
 import com.rustym.mobile.data.Track
 import com.rustym.mobile.data.Yt
 import com.rustym.mobile.data.Ytm
+import android.graphics.BitmapFactory
+import androidx.palette.graphics.Palette as AndroidPalette
+import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -119,27 +123,60 @@ import kotlin.math.sin
 
 // ---------------------------------------------------------------- Home
 
+private val HomeMoods = linkedMapOf(
+    "All" to "top hits this week",
+    "Relax" to "relaxing soft songs",
+    "Sleep" to "sleep music calm",
+    "Energize" to "workout energy hits",
+    "Romance" to "romantic love songs",
+)
+
+/** Vibrant colour from the last played song's artwork - tints the home page. */
+@Composable
+private fun rememberLastPlayedTint(latestId: String?, thumbUrl: String): Color? {
+    var tint by remember(latestId) { mutableStateOf<Color?>(null) }
+    LaunchedEffect(latestId) {
+        if (latestId == null || thumbUrl.isBlank()) return@LaunchedEffect
+        tint = withContext(Dispatchers.IO) {
+            runCatching {
+                val connection = URL(thumbUrl).openConnection().apply { connectTimeout = 5000; readTimeout = 5000 }
+                connection.getInputStream().use { input ->
+                    val bitmap = BitmapFactory.decodeStream(input) ?: return@runCatching null
+                    val palette = AndroidPalette.from(bitmap).generate()
+                    (palette.vibrantSwatch?.rgb ?: palette.dominantSwatch?.rgb)?.let { Color(it) }
+                }
+            }.getOrNull()
+        }
+    }
+    return tint
+}
+
 @Composable
 fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
-    var trending by remember { mutableStateOf<List<Track>?>(null) }
+    var mood by remember { mutableStateOf("All") }
+    var picks by remember { mutableStateOf<List<Track>?>(null) }
     var failed by remember { mutableStateOf(false) }
     var reload by remember { mutableStateOf(0) }
 
-    LaunchedEffect(reload) {
+    LaunchedEffect(mood, reload) {
         failed = false
-        trending = null
-        trending = withContext(Dispatchers.IO) {
-            runCatching { Yt.search("top songs this week") }.getOrNull()
-        }
-        if (trending == null) failed = true
+        picks = null
+        picks = withContext(Dispatchers.IO) { runCatching { Yt.search(HomeMoods[mood] ?: "top hits this week") }.getOrNull() }
+        if (picks == null) failed = true
     }
 
+    // The home page wears the colour of the last played song.
+    val tint = rememberLastPlayedTint(vm.recent.firstOrNull()?.id, vm.recent.firstOrNull()?.thumb.orEmpty())
+        ?: Accent
+
     LazyColumn(Modifier.fillMaxSize()) {
+        // ---- greeting header, tinted with the last played song
         item {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     val first = vm.account?.name?.takeIf { it != "Signed in" }?.substringBefore(' ')
-                    Text(if (first != null) "Hi, $first" else "Rustym", style = MaterialTheme.typography.headlineMedium, color = Accent)
+                    Text(if (first != null) "Hi, $first" else "Rustym",
+                        style = MaterialTheme.typography.headlineMedium, color = tint)
                     Text(
                         when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
                             in 5..11 -> "Good morning. Start the day with music."
@@ -153,6 +190,77 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 AccountButton(vm, onLogin)
             }
         }
+        // ---- mood filter chips
+        item {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HomeMoods.keys.forEach { m ->
+                    FilterChip(
+                        selected = mood == m,
+                        onClick = { mood = m },
+                        label = { Text(m) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = Surface2,
+                            labelColor = MaterialTheme.colorScheme.onBackground,
+                            selectedContainerColor = tint,
+                            selectedLabelColor = Color.White,
+                        ),
+                    )
+                }
+            }
+        }
+        // ---- quick picks: large artwork cards
+        item {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Quick picks", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                val p = picks
+                if (p != null && p.isNotEmpty()) TextButton(onClick = { vm.play(p.shuffled(), 0) }) { Text("Play all", color = tint) }
+            }
+        }
+        item {
+            val p = picks
+            when {
+                failed -> Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text("Couldn't load picks. Check your connection.", color = Dim)
+                    TextButton(onClick = { reload++ }) { Text("Retry", color = tint) }
+                }
+                p == null -> Box(Modifier.fillMaxWidth().height(150.dp), Alignment.Center) { CircularProgressIndicator(color = tint) }
+                p.isEmpty() -> EmptyNote("Nothing here yet - try another mood.")
+                else -> LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    itemsIndexed(p.take(12), key = { i, t -> "qp-$i-${t.id}" }) { i, t ->
+                        Box(
+                            Modifier
+                                .width(180.dp)
+                                .height(220.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable {
+                                    val list = p.take(12)
+                                    vm.play(list, list.indexOfFirst { it.id == t.id }.coerceAtLeast(0))
+                                },
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = t.thumb.replace(Regex("=w\d+-h\d+"), "=w544-h544"),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            )
+                            Box(
+                                Modifier.fillMaxSize().background(
+                                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))
+                                ),
+                            )
+                            Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
+                                Text(t.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(t.artist, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // ---- recently played
         if (vm.recent.isNotEmpty()) {
             item { SectionTitle("Recently played") }
             val list = vm.recent.take(8)
@@ -160,22 +268,10 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 TrackRow(t, vm.current?.id == t.id, vm.isFavorite(t.id), { vm.play(list, i) }, { vm.toggleFavorite(t) })
             }
         }
-        item { SectionTitle("Trending") }
-        val list = trending
-        when {
-            failed -> item {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Couldn't load trending songs. Check your connection.", color = Dim)
-                    TextButton(onClick = { reload++ }) { Text("Retry") }
-                }
-            }
-            list == null -> item { Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) { CircularProgressIndicator(color = Accent) } }
-            else -> itemsIndexed(list, key = { _, t -> "t" + t.id }) { i, t ->
-                TrackRow(t, vm.current?.id == t.id, vm.isFavorite(t.id), { vm.play(list, i) }, { vm.toggleFavorite(t) }, { vm.addToQueue(t) })
-            }
-        }
+        item { Box(Modifier.size(24.dp)) }
     }
 }
+
 
 // ---------------------------------------------------------------- Search
 

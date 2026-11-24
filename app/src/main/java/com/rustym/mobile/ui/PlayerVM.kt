@@ -120,12 +120,15 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
 
     init {
         libraryPrefs.registerOnSharedPreferenceChangeListener(favoritesListener)
-        if (Auth.loggedIn) {
-            account = Account("Signed in", "")
-            viewModelScope.launch {
-                runCatching { withContext(Dispatchers.IO) { Ytm.accountInfo() } }
-                    .onSuccess { account = it }
-                    .onFailure { if (it.message.orEmpty().contains("sign in again")) signOut() }
+        // The session loads off-thread; this may fire during startup or a moment later.
+        Auth.onReady {
+            if (Auth.loggedIn) {
+                account = Account("Signed in", "")
+                viewModelScope.launch {
+                    runCatching { withContext(Dispatchers.IO) { Ytm.accountInfo() } }
+                        .onSuccess { account = it }
+                        .onFailure { if (it.message.orEmpty().contains("sign in again")) signOut() }
+                }
             }
         }
         playbackSpeed = settings.getFloat("playback_speed", 1f)

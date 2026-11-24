@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Switch
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.draw.clip
@@ -1079,14 +1080,21 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
     var confirmReset by remember { mutableStateOf(false) }
     var songStats by remember { mutableStateOf(0 to 0L) }
     var lyricStats by remember { mutableStateOf(0 to 0L) }
+    val scope = rememberCoroutineScope()
+    // Cache walks and SimpleCache queries are disk work - never do them on the main thread.
     fun measureCache() {
-        cacheSize = runCatching {
+        scope.launch(Dispatchers.IO) {
             val dir = context.cacheDir
             fun size(f: java.io.File): Long = if (f.isDirectory) f.listFiles()?.sumOf(::size) ?: 0L else f.length()
-            size(dir)
-        }.getOrDefault(0L)
-        songStats = runCatching { AudioCache.cachedSongs() to AudioCache.cachedBytes() }.getOrDefault(0 to 0L)
-        lyricStats = vm.lyricsStats()
+            val temp = runCatching { size(dir) }.getOrDefault(0L)
+            val songs = runCatching { AudioCache.cachedSongs() to AudioCache.cachedBytes() }.getOrDefault(0 to 0L)
+            val lyrics = vm.lyricsStats()
+            withContext(Dispatchers.Main) {
+                cacheSize = temp
+                songStats = songs
+                lyricStats = lyrics
+            }
+        }
     }
     LaunchedEffect(Unit) { measureCache() }
     fun fmtBytes(bytes: Long): String = when {
@@ -1228,7 +1236,12 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                         Text("Temporary cache", style = MaterialTheme.typography.titleMedium)
                         Text(fmtBytes(cacheSize), color = Accent, style = MaterialTheme.typography.bodySmall)
                     }
-                    TextButton(onClick = { runCatching { context.cacheDir.listFiles()?.forEach { it.deleteRecursively() } }; measureCache() }) { Text("Clear", color = Accent) }
+                    TextButton(onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            runCatching { context.cacheDir.listFiles()?.forEach { it.deleteRecursively() } }
+                            withContext(Dispatchers.Main) { measureCache() }
+                        }
+                    }) { Text("Clear", color = Accent) }
                     TextButton(onClick = { measureCache() }) { Text("Refresh", color = Dim) }
                 }
                 Divider(color = Surface2, thickness = 1.dp)
@@ -1239,9 +1252,11 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                             color = if (songStats.first > 0) Accent else Dim, style = MaterialTheme.typography.bodySmall)
                     }
                     TextButton(onClick = {
-                        runCatching { context.cacheDir.listFiles()?.forEach { it.deleteRecursively() } }
-                        AudioCache.clear()
-                        measureCache()
+                        scope.launch(Dispatchers.IO) {
+                            runCatching { context.cacheDir.listFiles()?.forEach { it.deleteRecursively() } }
+                            AudioCache.clear()
+                            withContext(Dispatchers.Main) { measureCache() }
+                        }
                     }) { Text("Clear", color = Accent) }
                 }
                 Divider(color = Surface2, thickness = 1.dp)

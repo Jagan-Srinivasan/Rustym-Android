@@ -8,6 +8,8 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -21,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
@@ -66,11 +69,14 @@ object ThemeStore {
     private const val KEY = "theme"
     private const val ACCENT_KEY = "accent"
     private const val GLASS_KEY = "glass"
+    private const val DYNAMIC_KEY = "dynamic_colors"
     private var prefs: SharedPreferences? = null
 
     var palette by mutableStateOf(MidnightPalette)
         private set
     var glassEffects by mutableStateOf(true)
+        private set
+    var useDynamicColors by mutableStateOf(false)
         private set
     private var basePalette: Palette = MidnightPalette
 
@@ -87,6 +93,7 @@ object ThemeStore {
         basePalette = AllPalettes.firstOrNull { it.name == saved } ?: MidnightPalette
         val accent = p.getInt(ACCENT_KEY, basePalette.accent.toArgb())
         glassEffects = p.getBoolean(GLASS_KEY, true)
+        useDynamicColors = p.getBoolean(DYNAMIC_KEY, false)
         palette = basePalette.withAccent(Color(accent))
     }
 
@@ -104,6 +111,12 @@ object ThemeStore {
     fun updateGlassEffects(enabled: Boolean) {
         glassEffects = enabled
         prefs?.edit()?.putBoolean(GLASS_KEY, enabled)?.apply()
+    }
+
+    /** Material You: derive every colour from the user's wallpaper (Android 12+). */
+    fun updateDynamicColors(enabled: Boolean) {
+        useDynamicColors = enabled
+        prefs?.edit()?.putBoolean(DYNAMIC_KEY, enabled)?.apply()
     }
 
     fun applyArtworkAccent(color: Color) {
@@ -151,7 +164,18 @@ private fun Palette.toScheme(): ColorScheme {
 
 @Composable
 fun RustymTheme(content: @Composable () -> Unit) {
-    val p = ThemeStore.palette
+    val context = LocalContext.current
+    val base = ThemeStore.palette
+    // Material You: when enabled on Android 12+, every token comes from the wallpaper palette.
+    val p = if (ThemeStore.useDynamicColors && android.os.Build.VERSION.SDK_INT >= 31) {
+        val dyn = if (base.isLight) dynamicLightColorScheme(context) else dynamicDarkColorScheme(context)
+        Palette(
+            name = "Material You", isLight = base.isLight,
+            accent = dyn.primary, bg = dyn.background,
+            surface1 = dyn.surfaceContainerLow, surface2 = dyn.surfaceContainer,
+            dim = dyn.onSurfaceVariant, onBg = dyn.onBackground,
+        )
+    } else base
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {

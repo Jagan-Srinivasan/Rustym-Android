@@ -67,9 +67,18 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -481,11 +490,9 @@ fun MiniPlayer(vm: PlayerVM, onOpen: () -> Unit) {
             delay(500)
         }
     }
-    Column(
-        Modifier.fillMaxWidth()
+    Surface(
+        modifier = Modifier.fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(Surface2.copy(alpha = if (ThemeStore.glassEffects) 0.82f else 1f))
             .pointerInput(vm) {
                 var drag = 0f
                 detectHorizontalDragGestures(
@@ -494,8 +501,12 @@ fun MiniPlayer(vm: PlayerVM, onOpen: () -> Unit) {
                     onDragCancel = { drag = 0f },
                 )
             }
-            .clickable(onClick = onOpen)
+            .clickable(onClick = onOpen),
+        shape = RoundedCornerShape(20.dp),
+        color = Surface2.copy(alpha = if (ThemeStore.glassEffects) 0.82f else 1f),
+        tonalElevation = 2.dp,
     ) {
+        Column {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Art(t.thumb, 46.dp, corner = 12.dp)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -515,6 +526,7 @@ fun MiniPlayer(vm: PlayerVM, onOpen: () -> Unit) {
             trackColor = Color.Transparent,
             gapSize = 0.dp,
         )
+        }
     }
 }
 
@@ -559,16 +571,24 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop, alpha = 0.22f)
         }
         Column(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 20.dp)) {
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onClose) { Icon(Icons.Filled.KeyboardArrowDown, "Close", Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onBackground) }
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (showQueue) "Up next" else "Now Playing", color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleMedium)
-                Text(if (showQueue) "Your queue" else vm.queue.takeIf { it.size > 1 }?.let { "Track ${vm.queueIndex + 1} of ${it.size}" } ?: "Rustym", color = Dim, style = MaterialTheme.typography.bodySmall)
-            }
-            IconButton(onClick = { showOutput = true }) {
-                Icon(Icons.Filled.Headphones, "Output devices", Modifier.size(26.dp), tint = Accent)
-            }
-        }
+        // Material 3 top app bar: collapse · Now Playing + context · headphones = output devices
+        CenterAlignedTopAppBar(
+            title = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(if (showQueue) "Up next" else "Now Playing", color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleMedium)
+                    Text(if (showQueue) "Your queue" else vm.queue.takeIf { it.size > 1 }?.let { "Track ${vm.queueIndex + 1} of ${it.size}" } ?: "Rustym", color = Dim, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = onClose) { Icon(Icons.Filled.KeyboardArrowDown, "Close", Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onBackground) }
+            },
+            actions = {
+                IconButton(onClick = { showOutput = true }) {
+                    Icon(Icons.Filled.Headphones, "Output devices", Modifier.size(26.dp), tint = Accent)
+                }
+            },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
+        )
 
         if (showQueue) {
             LazyColumn(Modifier.weight(1f)) {
@@ -676,22 +696,16 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
 
         // transport
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(72.dp, 56.dp).clip(RoundedCornerShape(50)).background(Accent), contentAlignment = Alignment.Center) {
-                IconButton(onClick = vm::previous, modifier = Modifier.size(72.dp, 56.dp)) {
-                    Icon(Icons.Filled.SkipPrevious, "Previous", Modifier.size(32.dp), tint = Color.Black.copy(alpha = 0.72f))
-                }
+            // Material 3 tonal icon buttons give the pill shape, accent fill and ripple for free.
+            FilledIconButton(onClick = vm::previous, modifier = Modifier.size(72.dp, 56.dp), shape = RoundedCornerShape(50)) {
+                Icon(Icons.Filled.SkipPrevious, "Previous", Modifier.size(32.dp))
             }
-            Box(Modifier.size(116.dp, 64.dp).clip(RoundedCornerShape(50)).background(Accent), contentAlignment = Alignment.Center) {
-                if (vm.isLoading) CircularProgressIndicator(Modifier.size(30.dp), color = Color.Black.copy(alpha = 0.72f), strokeWidth = 3.dp)
-                else IconButton(onClick = vm::togglePlay, modifier = Modifier.size(116.dp, 64.dp)) {
-                    Icon(if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (vm.isPlaying) "Pause" else "Play",
-                        Modifier.size(36.dp), tint = Color.Black.copy(alpha = 0.72f))
-                }
+            FilledIconButton(onClick = vm::togglePlay, modifier = Modifier.size(116.dp, 64.dp), shape = RoundedCornerShape(50)) {
+                if (vm.isLoading) CircularProgressIndicator(Modifier.size(30.dp), strokeWidth = 3.dp)
+                else Icon(if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (vm.isPlaying) "Pause" else "Play", Modifier.size(36.dp))
             }
-            Box(Modifier.size(72.dp, 56.dp).clip(RoundedCornerShape(50)).background(Accent), contentAlignment = Alignment.Center) {
-                IconButton(onClick = vm::next, modifier = Modifier.size(72.dp, 56.dp)) {
-                    Icon(Icons.Filled.SkipNext, "Next", Modifier.size(32.dp), tint = Color.Black.copy(alpha = 0.72f))
-                }
+            FilledIconButton(onClick = vm::next, modifier = Modifier.size(72.dp, 56.dp), shape = RoundedCornerShape(50)) {
+                Icon(Icons.Filled.SkipNext, "Next", Modifier.size(32.dp))
             }
         }
         // utility row: shuffle · speed · repeat
@@ -699,9 +713,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             IconButton(onClick = vm::toggleShuffle) { Icon(Icons.Filled.Shuffle, "Shuffle", tint = if (vm.shuffle) Accent else Dim) }
             IconButton(onClick = { showQueue = !showQueue }) { Icon(Icons.Filled.QueueMusic, "Queue", tint = if (showQueue) Accent else Dim) }
             val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-            TextButton(onClick = { vm.updatePlaybackSpeed(speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]) }, contentPadding = PaddingValues(horizontal = 10.dp)) {
-                Text("${vm.playbackSpeed}x", color = Accent, style = MaterialTheme.typography.labelLarge)
-            }
+            AssistChip(onClick = { vm.updatePlaybackSpeed(speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]) }, label = { Text("${vm.playbackSpeed}x", color = Accent) }, border = AssistChipDefaults.assistChipBorder(borderColor = Dim.copy(alpha = 0.3f)))
             IconButton(onClick = vm::cycleRepeat) {
                 Icon(
                     if (vm.repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
@@ -717,31 +729,37 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
 
 // ---------------------------------------------------------------- Settings
 
-/** Rounded card used for every settings section. */
+/** Material 3 elevated card used for every settings section. */
 @Composable
 private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Surface1).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        content = content,
-    )
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = Surface1,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+    }
 }
 
-/** Pick-one chip row. */
+/** Material 3 filter chips: pick-one options with native selection styling. */
 @Composable
 private fun SettingsChips(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEachIndexed { i, label ->
-            val shape = RoundedCornerShape(50)
-            Text(
-                label,
-                modifier = Modifier.clip(shape)
-                    .background(if (selected == i) Accent else Surface2)
-                    .border(1.dp, if (selected == i) Accent else Surface2, shape)
-                    .clickable { onSelect(i) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                color = if (selected == i) Color.White else MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.labelLarge,
+            FilterChip(
+                selected = selected == i,
+                onClick = { onSelect(i) },
+                label = { Text(label, maxLines = 1) },
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = Surface2,
+                    labelColor = MaterialTheme.colorScheme.onBackground,
+                    selectedContainerColor = Accent,
+                    selectedLabelColor = Color.White,
+                ),
             )
         }
     }
@@ -826,12 +844,23 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                         )
                     }
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Glass effects", style = MaterialTheme.typography.titleSmall)
                         Text("Use translucent player surfaces", color = Dim, style = MaterialTheme.typography.bodySmall)
                     }
                     androidx.compose.material3.Switch(checked = ThemeStore.glassEffects, onCheckedChange = ThemeStore::updateGlassEffects)
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Material You colours", style = MaterialTheme.typography.titleSmall)
+                        Text("Colours from your wallpaper (Android 12+)", color = Dim, style = MaterialTheme.typography.bodySmall)
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = ThemeStore.useDynamicColors,
+                        onCheckedChange = { ThemeStore.updateDynamicColors(it) },
+                        enabled = android.os.Build.VERSION.SDK_INT >= 31,
+                    )
                 }
             }
         }

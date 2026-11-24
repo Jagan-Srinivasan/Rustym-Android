@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,44 +63,45 @@ fun TrackRow(
     onFav: () -> Unit,
     onQueue: (() -> Unit)? = null,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (isCurrent) Accent.copy(alpha = 0.08f) else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Art(t.thumb, 52.dp, corner = 12.dp)
-        Column(Modifier.weight(1f)) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(
+            containerColor = if (isCurrent) Accent.copy(alpha = 0.10f) else Color.Transparent,
+            headlineColor = if (isCurrent) Accent else MaterialTheme.colorScheme.onSurface,
+            supportingColor = Dim,
+        ),
+        leadingContent = { Art(t.thumb, 52.dp, corner = 12.dp) },
+        headlineContent = {
             Text(
                 t.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = if (isCurrent) Accent else MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodyLarge,
             )
+        },
+        supportingContent = {
             Text(
                 listOfNotNull(t.artist.ifEmpty { null }, if (t.durationSec > 0) fmtTime(t.durationSec * 1000) else null).joinToString(" • "),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = Dim,
                 style = MaterialTheme.typography.bodySmall,
             )
-        }
-        if (onQueue != null) {
-            IconButton(onClick = onQueue) { Icon(Icons.Filled.PlaylistAdd, "Add to queue", tint = Dim) }
-        }
-        IconButton(onClick = onFav) {
-            Icon(
-                if (isFav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                if (isFav) "Remove from favourites" else "Add to favourites",
-                tint = if (isFav) Accent else Dim,
-            )
-        }
-    }
+        },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onQueue != null) {
+                    IconButton(onClick = onQueue) { Icon(Icons.Filled.PlaylistAdd, "Add to queue", tint = Dim) }
+                }
+                IconButton(onClick = onFav) {
+                    Icon(
+                        if (isFav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        if (isFav) "Remove from favourites" else "Add to favourites",
+                        tint = if (isFav) Accent else Dim,
+                    )
+                }
+            }
+        },
+    )
 }
 
 @Composable

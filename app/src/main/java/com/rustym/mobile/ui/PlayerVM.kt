@@ -749,6 +749,15 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         loadLocalPlaylists()
     }
 
+    /** Adds one track to a locally saved playlist, creating it on the fly if needed. */
+    fun addToLocalPlaylist(name: String, t: Track) {
+        val existing = localPlaylists.firstOrNull { it.first == name }?.second ?: emptyList()
+        if (existing.any { it.id == t.id }) { message = "Already in \"$name\""; return }
+        library.saveLocalPlaylist(name, existing + listOf(t))
+        loadLocalPlaylists()
+        message = "Added to \"$name\""
+    }
+
     /**
      * Fetch the Spotify playlist's public track list and match every song on
      * YouTube Music (4 concurrent lookups), then save it as a local playlist.

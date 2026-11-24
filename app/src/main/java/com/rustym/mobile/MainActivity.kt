@@ -15,21 +15,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -121,20 +128,7 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
             bottomBar = {
                 Column {
                     MiniPlayer(vm) { showPlayer = true }
-                    NavigationBar(containerColor = Surface2, modifier = Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(26.dp))) {
-                        Tab.entries.forEach { t ->
-                            NavigationBarItem(
-                                selected = tab == t,
-                                onClick = { tab = t },
-                                icon = { Icon(t.icon, t.label) },
-                                label = { Text(t.label) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Accent, selectedTextColor = Accent,
-                                    indicatorColor = Bg, unselectedIconColor = Dim, unselectedTextColor = Dim,
-                                ),
-                            )
-                        }
-                    }
+                    RustymNavBar(tab) { tab = it }
                 }
             },
         ) { pad ->
@@ -149,12 +143,57 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
             }
         }
         if (showPlayer) NowPlayingScreen(vm) { showPlayer = false }
-                if (showSignInNotice) {
+        if (showSignInNotice) {
             SignInNoticeDialog(
                 onProceed = { showSignInNotice = false; showLogin = true },
                 onDismiss = { showSignInNotice = false },
             )
         }
         if (showLogin) LoginScreen(vm) { showLogin = false }
+    }
+}
+
+/** Floating pill nav bar: each tab is an icon in a soft pill (accent when selected) + label. */
+@Composable
+private fun RustymNavBar(tab: Tab, onSelect: (Tab) -> Unit) {
+    Surface(
+        modifier = Modifier
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .navigationBarsPadding(),
+        shape = RoundedCornerShape(28.dp),
+        color = Surface2,
+        tonalElevation = 2.dp,
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            Tab.entries.forEach { t ->
+                val selected = tab == t
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(18.dp))
+                        .clickable { onSelect(t) }
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(if (selected) Accent.copy(alpha = 0.16f) else Color.Transparent)
+                            .padding(horizontal = 18.dp, vertical = 6.dp),
+                    ) {
+                        Icon(t.icon, t.label, tint = if (selected) Accent else Dim, modifier = Modifier.size(24.dp))
+                    }
+                    Text(
+                        t.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (selected) Accent else Dim,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
+            }
+        }
     }
 }

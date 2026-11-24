@@ -87,6 +87,21 @@ object AudioCache {
     }
 
     fun isCached(track: Track): Boolean = !track.isLocal && (cache?.isCached(track.id, 0, Long.MAX_VALUE) == true)
+
+    /** Number of songs downloaded into the offline cache, for the storage page. */
+    fun cachedSongs(): Int = runCatching {
+        val c = cache ?: return@runCatching 0
+        c.keys().count { runCatching { c.isCached(it, 0, Long.MAX_VALUE) }.getOrDefault(false) }
+    }.getOrDefault(0)
+
+    /** Total bytes held by the offline cache. */
+    fun cachedBytes(): Long = runCatching { cache?.cacheSpace }.getOrDefault(0L)
+
+    /** Drop every downloaded song (LRU cache stays open, just emptied). */
+    fun clear() {
+        val c = cache ?: return
+        c.keys().forEach { runCatching { c.removeResource(it) } }
+    }
 }
 
 /**

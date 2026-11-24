@@ -351,6 +351,13 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         current?.let { loadLyrics(it) }
     }
 
+    /** How many lyrics are cached on this device and roughly how much space they use. */
+    fun lyricsStats(): Pair<Int, Long> {
+        val all = lyricsPrefs.all
+        val bytes = all.entries.sumOf { (it.key.toByteArray().size + ((it.value as? String)?.toByteArray()?.size ?: 0)).toLong() }
+        return all.size to bytes
+    }
+
     /** Erase per-song play counts and total listening time. */
     fun resetPlayStats() {
         playCounts.clear()

@@ -1,5 +1,7 @@
 package com.rustym.mobile.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -111,6 +113,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.rustym.mobile.data.Track
+import com.rustym.mobile.playback.AudioCache
 import com.rustym.mobile.data.Yt
 import com.rustym.mobile.data.Ytm
 import kotlinx.coroutines.Dispatchers
@@ -967,12 +970,16 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
     val context = LocalContext.current
     var cacheSize by remember { mutableLongStateOf(0L) }
     var confirmReset by remember { mutableStateOf(false) }
+    var songStats by remember { mutableStateOf(0 to 0L) }
+    var lyricStats by remember { mutableStateOf(0 to 0L) }
     fun measureCache() {
         cacheSize = runCatching {
             val dir = context.cacheDir
             fun size(f: java.io.File): Long = if (f.isDirectory) f.listFiles()?.sumOf(::size) ?: 0L else f.length()
             size(dir)
         }.getOrDefault(0L)
+        songStats = runCatching { AudioCache.cachedSongs() to AudioCache.cachedBytes() }.getOrDefault(0 to 0L)
+        lyricStats = vm.lyricsStats()
     }
     LaunchedEffect(Unit) { measureCache() }
     fun fmtBytes(bytes: Long): String = when {
@@ -1114,10 +1121,24 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Divider(color = Surface2, thickness = 1.dp)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Saved lyrics", style = MaterialTheme.typography.titleMedium)
-                        Text("Cached lyrics from every source", color = Dim, style = MaterialTheme.typography.bodySmall)
+                        Text("Cached songs", style = MaterialTheme.typography.titleMedium)
+                        Text("${songStats.first} songs · ${fmtBytes(songStats.second)} downloaded for offline",
+                            color = if (songStats.first > 0) Accent else Dim, style = MaterialTheme.typography.bodySmall)
                     }
-                    TextButton(onClick = { vm.clearLyricsCache() }) { Text("Clear", color = Accent) }
+                    TextButton(onClick = {
+                        runCatching { context.cacheDir.listFiles()?.forEach { it.deleteRecursively() } }
+                        AudioCache.clear()
+                        measureCache()
+                    }) { Text("Clear", color = Accent) }
+                }
+                Divider(color = Surface2, thickness = 1.dp)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Saved lyrics", style = MaterialTheme.typography.titleMedium)
+                        Text("${lyricStats.first} lyrics cached · ${fmtBytes(lyricStats.second)} from every source",
+                            color = if (lyricStats.first > 0) Accent else Dim, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { vm.clearLyricsCache(); measureCache() }) { Text("Clear", color = Accent) }
                 }
                 Divider(color = Surface2, thickness = 1.dp)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1144,6 +1165,18 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
             SettingsCard {
                 Text("Rustym for Android", style = MaterialTheme.typography.titleMedium)
                 Text("Version 1.3.0 · Music, without distractions.", color = Dim, style = MaterialTheme.typography.bodySmall)
+                Text("Developed by Jagan Srinivasan", color = Dim, style = MaterialTheme.typography.bodySmall)
+                val repo = "https://github.com/Jagan-Srinivasan/Rustym-Android"
+                Text("github.com/Jagan-Srinivasan/Rustym-Android",
+                    color = Accent,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .clickable {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(repo)))
+                            }
+                        })
                 Text("Lyrics come from Unison, Better Lyrics, KuGou, LRCLIB, NetEase and Lyrics.ovh. Audio streams directly from YouTube Music.", color = Dim, style = MaterialTheme.typography.bodySmall)
             }
         }

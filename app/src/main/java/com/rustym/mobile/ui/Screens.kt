@@ -86,6 +86,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -713,7 +714,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             IconButton(onClick = vm::toggleShuffle) { Icon(Icons.Filled.Shuffle, "Shuffle", tint = if (vm.shuffle) Accent else Dim) }
             IconButton(onClick = { showQueue = !showQueue }) { Icon(Icons.Filled.QueueMusic, "Queue", tint = if (showQueue) Accent else Dim) }
             val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-            AssistChip(onClick = { vm.updatePlaybackSpeed(speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]) }, label = { Text("${vm.playbackSpeed}x", color = Accent) }, border = AssistChipDefaults.assistChipBorder(borderColor = Dim.copy(alpha = 0.3f)))
+            AssistChip(onClick = { vm.updatePlaybackSpeed(speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]) }, label = { Text("${vm.playbackSpeed}x", color = Accent) })
             IconButton(onClick = vm::cycleRepeat) {
                 Icon(
                     if (vm.repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,

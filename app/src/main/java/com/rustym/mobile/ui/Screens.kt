@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,6 +40,8 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Switch
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Check
@@ -904,6 +907,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
     var showQueue by remember { mutableStateOf(false) }
     var showOutput by remember { mutableStateOf(false) }
     var showFx by remember { mutableStateOf(false) }
+    var editLyrics by remember(t?.id) { mutableStateOf(false) }
 
     LaunchedEffect(t?.id, vm.isPlaying) {
         while (true) {
@@ -912,168 +916,271 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Bg)) {
-        if (t != null && t.thumb.isNotBlank()) {
-            coil.compose.AsyncImage(model = t.thumb, contentDescription = null,
-                modifier = Modifier.fillMaxSize().blur(80.dp).background(Bg.copy(alpha = 0.55f)),
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop, alpha = 0.22f)
-        }
-        Column(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 20.dp)) {
-        // Material 3 top app bar: collapse · Now Playing + context · headphones = output devices
-        CenterAlignedTopAppBar(
-            title = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (showQueue) "Up next" else "Now Playing", color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleMedium)
-                    Text(if (showQueue) "Your queue" else vm.queue.takeIf { it.size > 1 }?.let { "Track ${vm.queueIndex + 1} of ${it.size}" } ?: "Rustym", color = Dim, style = MaterialTheme.typography.bodySmall)
-                }
-            },
-            navigationIcon = {
-                IconButton(onClick = onClose) { Icon(Icons.Filled.KeyboardArrowDown, "Close", Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onBackground) }
-            },
-            actions = {
-                IconButton(onClick = { showOutput = true }) {
-                    Icon(Icons.Filled.Headphones, "Output devices", Modifier.size(26.dp), tint = Accent)
-                }
-            },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
-        )
+    val glassAlpha = if (ThemeStore.glassEffects) 0.11f else 0.16f
 
-        if (showQueue) {
-            LazyColumn(Modifier.weight(1f)) {
-                itemsIndexed(vm.queue) { i, q ->
-                    TrackRow(q, i == vm.queueIndex, vm.isFavorite(q.id), { vm.skipTo(i) }, { vm.toggleFavorite(q) })
+    Box(Modifier.fillMaxSize().background(Bg)) {
+        // ---- blurred artwork backdrop, carrying the song's colour
+        if (t != null && t.thumb.isNotBlank()) {
+            coil.compose.AsyncImage(
+                model = t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w544-h544"),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                alpha = 0.8f,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { scaleX = 1.35f; scaleY = 1.35f }
+                    .blur(60.dp),
+            )
+            Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.42f)))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.25f), Color.Transparent, Color.Black.copy(alpha = 0.4f)))))
+        }
+
+        // ---- the frosted-glass card
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp)
+                .navigationBarsPadding(),
+            shape = RoundedCornerShape(36.dp),
+            color = Color.White.copy(alpha = glassAlpha),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+        ) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 10.dp)) {
+                // top bar: collapse · Now Playing · output devices
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onClose) { Icon(Icons.Filled.KeyboardArrowDown, "Close", Modifier.size(30.dp), tint = MaterialTheme.colorScheme.onBackground) }
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(if (showQueue) "Up next" else "Now Playing", color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleMedium)
+                        if (!showQueue) {
+                            Text(
+                                vm.queue.takeIf { it.size > 1 }?.let { "Track ${vm.queueIndex + 1} of ${it.size}" } ?: "Rustym",
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    IconButton(onClick = { showOutput = true }) {
+                        Icon(Icons.Filled.Headphones, "Output devices", Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f))
+                    }
                 }
-            }
-        } else if (t != null) {
-            Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), 320.dp, corner = 26.dp)
-            }
-            var editLyrics by remember(t.id) { mutableStateOf(false) }
-            val lyricLines = remember(vm.lyricsText) { vm.syncedLyricLines() }
-            val plainLines = remember(vm.lyricsText) { vm.plainLyrics().lines().filter { it.isNotBlank() } }
-            val activeIndex = vm.activeLyricIndex(pos)
-            // Plain (unsynced) lyrics still show one line, roughly placed by progress.
-            val plainIndex = if (lyricLines.isEmpty() && plainLines.isNotEmpty() && dur > 1L) {
-                ((pos.toFloat() / dur).coerceIn(0f, 0.999f) * plainLines.size).toInt()
-            } else -1
-            val currentLine: String? = when {
-                lyricLines.isNotEmpty() -> lyricLines.getOrNull(activeIndex.coerceAtLeast(0))?.second
-                plainIndex >= 0 -> plainLines.getOrNull(plainIndex)
-                else -> null
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp, start = 4.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f).height(24.dp), contentAlignment = Alignment.CenterStart) {
-                    when {
-                        lyricLines.isNotEmpty() && activeIndex < 0 -> LyricsGapDots()
-                        currentLine != null -> Text(
-                            currentLine,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.pointerInput(t.id) { detectTapGestures(onLongPress = { editLyrics = true }) },
+
+                if (showQueue) {
+                    LazyColumn(Modifier.weight(1f).padding(top = 6.dp)) {
+                        itemsIndexed(vm.queue) { i, q ->
+                            TrackRow(q, i == vm.queueIndex, vm.isFavorite(q.id), { vm.skipTo(i) }, { vm.toggleFavorite(q) })
+                        }
+                    }
+                } else {
+                    // ---- artwork with favourite heart
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (t != null) {
+                            Box(
+                                Modifier
+                                    .padding(top = 4.dp)
+                                    .size(272.dp)
+                                    .clip(RoundedCornerShape(28.dp))
+                                    .background(Color.Black.copy(alpha = 0.25f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(28.dp)),
+                            ) {
+                                Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), 272.dp, corner = 28.dp)
+                                Box(
+                                    Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(10.dp)
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.35f))
+                                        .clickable { vm.toggleFavorite(t) },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        if (vm.isFavorite(t.id)) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                        if (vm.isFavorite(t.id)) "Remove from favourites" else "Add to favourites",
+                                        Modifier.size(20.dp),
+                                        tint = if (vm.isFavorite(t.id)) Accent else Color.White,
+                                    )
+                                }
+                            }
+                        }
+                        // ---- synced lyric line (or gap dots), centred
+                        val lyricLines = remember(vm.lyricsText) { vm.syncedLyricLines() }
+                        val plainLines = remember(vm.lyricsText) { vm.plainLyrics().lines().filter { it.isNotBlank() } }
+                        val activeIndex = vm.activeLyricIndex(pos)
+                        val plainIndex = if (lyricLines.isEmpty() && plainLines.isNotEmpty() && dur > 1L) {
+                            ((pos.toFloat() / dur).coerceIn(0f, 0.999f) * plainLines.size).toInt()
+                        } else -1
+                        val currentLine: String? = when {
+                            lyricLines.isNotEmpty() -> lyricLines.getOrNull(activeIndex.coerceAtLeast(0))?.second
+                            plainIndex >= 0 -> plainLines.getOrNull(plainIndex)
+                            else -> null
+                        }
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(26.dp)
+                                .padding(top = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            when {
+                                lyricLines.isNotEmpty() && activeIndex < 0 -> LyricsGapDots()
+                                currentLine != null -> Text(
+                                    currentLine,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.pointerInput(t?.id) { detectTapGestures(onLongPress = { editLyrics = true }) },
+                                )
+                            }
+                        }
+                        // ---- centred title + artist
+                        if (t != null) {
+                            Text(
+                                t.title,
+                                style = MaterialTheme.typography.headlineSmall,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                            Text(
+                                t.artist,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 3.dp),
+                            )
+                        }
+                    }
+                }
+
+                // ---- seek bar + times
+                Slider(
+                    value = if (dragging) dragValue else (pos.toFloat() / dur).coerceIn(0f, 1f),
+                    onValueChange = { dragging = true; dragValue = it },
+                    onValueChangeFinished = { vm.seekTo((dragValue * dur).toLong()); pos = (dragValue * dur).toLong(); dragging = false },
+                    thumb = { Box(Modifier.size(14.dp).clip(CircleShape).background(Color.White)) },
+                    track = { state ->
+                        val frac = state.value.coerceIn(0.004f, 1f)
+                        Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.CenterStart) {
+                            Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.3f)))
+                            Box(Modifier.fillMaxWidth(frac).height(3.dp).clip(CircleShape).background(Accent))
+                        }
+                    },
+                )
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                    Text(fmtTime(if (dragging) (dragValue * dur).toLong() else pos), color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f), style = MaterialTheme.typography.bodySmall)
+                    Box(Modifier.weight(1f))
+                    Text(fmtTime(dur), color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f), style = MaterialTheme.typography.bodySmall)
+                }
+
+                // ---- transport: shuffle · prev · big glass play · next · repeat
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = vm::toggleShuffle) {
+                        Icon(Icons.Filled.Shuffle, "Shuffle", tint = if (vm.shuffle) Accent else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f))
+                    }
+                    IconButton(onClick = vm::previous) {
+                        Icon(Icons.Filled.SkipPrevious, "Previous", Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onBackground)
+                    }
+                    Box(
+                        Modifier
+                            .size(78.dp)
+                            .clip(CircleShape)
+                            .background(Accent.copy(alpha = if (ThemeStore.glassEffects) 0.75f else 1f))
+                            .clickable { vm.togglePlay() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (vm.isLoading) CircularProgressIndicator(Modifier.size(30.dp), strokeWidth = 3.dp, color = Color.White)
+                        else Icon(
+                            if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            if (vm.isPlaying) "Pause" else "Play",
+                            Modifier.size(38.dp), tint = Color.White,
+                        )
+                    }
+                    IconButton(onClick = vm::next) {
+                        Icon(Icons.Filled.SkipNext, "Next", Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onBackground)
+                    }
+                    IconButton(onClick = vm::cycleRepeat) {
+                        Icon(
+                            if (vm.repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                            "Repeat",
+                            tint = if (vm.repeatMode == Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f) else Accent,
                         )
                     }
                 }
-                if (vm.lyricsText.isNotBlank()) {
-                    IconButton(onClick = { editLyrics = true }, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Filled.Edit, "Edit lyrics", Modifier.size(16.dp), tint = Dim)
+
+                // ---- bottom utility pill
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color.White.copy(alpha = if (ThemeStore.glassEffects) 0.1f else 0.16f),
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = { showQueue = !showQueue }) {
+                            Icon(Icons.Filled.QueueMusic, "Queue", tint = if (showQueue) Accent else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f))
+                        }
+                        IconButton(onClick = { showFx = true }, modifier = Modifier.size(26.dp)) {
+                            Icon(Icons.Filled.Tune, "Sound effects", Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f))
+                        }
+                        val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+                        TextButton(onClick = { vm.updatePlaybackSpeed(speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]) }) {
+                            Text("${vm.playbackSpeed}x", color = Accent)
+                        }
+                        IconButton(onClick = { editLyrics = true }, enabled = vm.lyricsText.isNotBlank()) {
+                            Icon(Icons.Filled.Edit, "Edit lyrics", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f))
+                        }
                     }
                 }
-            }
-            // title + artist on the left, favourite heart on the right (like Spotify / YT Music)
-            val fav = vm.isFavorite(t.id)
-            Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).padding(start = 2.dp)) {
-                    Text(t.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onBackground)
-                    Text(t.artist, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 3.dp))
-                }
-                IconButton(onClick = { vm.toggleFavorite(t) }, modifier = Modifier.size(48.dp)) {
-                    Icon(
-                        if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        if (fav) "Remove from favourites" else "Add to favourites",
-                        Modifier.size(28.dp), tint = if (fav) Accent else Dim,
+
+                // ---- volume row
+                Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.VolumeDown, "Quieter", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
+                    Slider(
+                        value = vm.volume,
+                        onValueChange = { vm.setVolume(it) },
+                        modifier = Modifier.weight(1f),
+                        thumb = { Box(Modifier.size(12.dp).clip(CircleShape).background(Color.White)) },
+                        track = { state ->
+                            val frac = state.value.coerceIn(0.02f, 1f)
+                            Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.CenterStart) {
+                                Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.3f)))
+                                Box(Modifier.fillMaxWidth(frac).height(3.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.85f)))
+                            }
+                        },
                     )
+                    Icon(Icons.Filled.VolumeUp, "Louder", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
                 }
             }
-            if (editLyrics) {
-                AlertDialog(
-                    onDismissRequest = { editLyrics = false },
-                    title = { Text("Lyrics") },
-                    text = {
-                        Column {
-                            OutlinedTextField(
-                                value = vm.lyricsText,
-                                onValueChange = vm::saveLyrics,
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("Paste plain lyrics or timestamped LRC lyrics…") },
-                                minLines = 4, maxLines = 8,
-                            )
-                            Text("Synced format: [mm:ss.xx] lyric line", color = Dim, style = MaterialTheme.typography.bodySmall)
-                        }
-                    },
-                    confirmButton = { TextButton(onClick = { editLyrics = false }) { Text("Done", color = Accent) } },
-                )
-            }
-        } else {
-            Box(Modifier.weight(1f).fillMaxWidth(), Alignment.Center) { Text("Nothing playing", color = Dim) }
         }
 
-        // seek bar
-        Slider(
-            value = if (dragging) dragValue else (pos.toFloat() / dur).coerceIn(0f, 1f),
-            onValueChange = { dragging = true; dragValue = it },
-            onValueChangeFinished = { vm.seekTo((dragValue * dur).toLong()); pos = (dragValue * dur).toLong(); dragging = false },
-            // slim, premium slider: hairline track with a small thumb
-            thumb = {
-                Box(Modifier.size(14.dp).clip(CircleShape).background(Accent))
-            },
-            track = { state ->
-                val frac = state.value.coerceIn(0.004f, 1f)
-                Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.CenterStart) {
-                    Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(Dim.copy(alpha = 0.25f)))
-                    Box(Modifier.fillMaxWidth(frac).height(3.dp).clip(CircleShape).background(Accent))
-                }
-            },
-        )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-            Text(fmtTime(if (dragging) (dragValue * dur).toLong() else pos), color = Dim, style = MaterialTheme.typography.bodySmall)
-            Box(Modifier.weight(1f))
-            Text(fmtTime(dur), color = Dim, style = MaterialTheme.typography.bodySmall)
-        }
-
-        // transport
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-            // Material 3 tonal icon buttons give the pill shape, accent fill and ripple for free.
-            FilledIconButton(onClick = vm::previous, modifier = Modifier.size(72.dp, 56.dp), shape = RoundedCornerShape(50)) {
-                Icon(Icons.Filled.SkipPrevious, "Previous", Modifier.size(32.dp))
-            }
-            FilledIconButton(onClick = vm::togglePlay, modifier = Modifier.size(116.dp, 64.dp), shape = RoundedCornerShape(50)) {
-                if (vm.isLoading) CircularProgressIndicator(Modifier.size(30.dp), strokeWidth = 3.dp)
-                else Icon(if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (vm.isPlaying) "Pause" else "Play", Modifier.size(36.dp))
-            }
-            FilledIconButton(onClick = vm::next, modifier = Modifier.size(72.dp, 56.dp), shape = RoundedCornerShape(50)) {
-                Icon(Icons.Filled.SkipNext, "Next", Modifier.size(32.dp))
-            }
-        }
-        // utility row: shuffle · speed · repeat
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = vm::toggleShuffle) { Icon(Icons.Filled.Shuffle, "Shuffle", tint = if (vm.shuffle) Accent else Dim) }
-            IconButton(onClick = { showQueue = !showQueue }) { Icon(Icons.Filled.QueueMusic, "Queue", tint = if (showQueue) Accent else Dim) }
-            IconButton(onClick = { showFx = true }, modifier = Modifier.size(26.dp)) { Icon(Icons.Filled.Tune, "Sound effects", Modifier.size(22.dp), tint = Dim) }
-            val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-            AssistChip(onClick = { vm.updatePlaybackSpeed(speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]) }, label = { Text("${vm.playbackSpeed}x", color = Accent) })
-            IconButton(onClick = vm::cycleRepeat) {
-                Icon(
-                    if (vm.repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                    "Repeat", tint = if (vm.repeatMode == Player.REPEAT_MODE_OFF) Dim else Accent,
-                )
-            }
-        }
-        Box(Modifier.size(14.dp))
         if (showOutput) OutputDevicesDialog(vm) { showOutput = false }
         if (showFx) SoundFxDialog { showFx = false }
-    }
+        if (editLyrics) {
+            AlertDialog(
+                onDismissRequest = { editLyrics = false },
+                title = { Text("Lyrics") },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = vm.lyricsText,
+                            onValueChange = vm::saveLyrics,
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("Paste plain lyrics or timestamped LRC lyrics…") },
+                            minLines = 4, maxLines = 8,
+                        )
+                        Text("Synced format: [mm:ss.xx] lyric line", color = Dim, style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+                confirmButton = { TextButton(onClick = { editLyrics = false }) { Text("Done", color = Accent) } },
+            )
+        }
     }
 }
 

@@ -9,6 +9,7 @@ import kotlin.concurrent.thread
 class RustymApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashReporter.install(this)
         Auth.init(this)
         ThemeStore.init(this)
         thread(name = "yt-init") { Yt.init() }

@@ -770,7 +770,7 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
                 val matched: List<Track?> = coroutineScope {
                     wanted.map { t ->
                         async(Dispatchers.IO) {
-                            withPermit {
+                            permits.withPermit {
                                 val found = runCatching {
                                     Yt.search("${t.title} ${t.artists}").firstOrNull()
                                 }.getOrNull()

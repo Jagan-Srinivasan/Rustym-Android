@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">Rustym</string>
+    <string name="widget_label">Rustym player</string>
+    <string name="widget_desc">Shows the current song with play controls</string>
+    <string name="widget_idle">Nothing playing yet</string>
+    <string name="widget_prev">Previous</string>
+    <string name="widget_next">Next</string>
+    <string name="widget_playpause">Play or pause</string>
 </resources>

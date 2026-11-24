@@ -20,6 +20,7 @@ import java.util.concurrent.Semaphore
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
+import android.content.Intent
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import androidx.media3.session.CommandButton
@@ -158,6 +159,10 @@ class PlaybackService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
                 refreshLikeButton()
                 prefetchNext(player)
+                updateWidget(player)
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                updateWidget(player)
             }
             override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
                 prefetchNext(player)
@@ -223,6 +228,44 @@ class PlaybackService : MediaSessionService() {
             .build()
         session?.setCustomLayout(listOf(likeButton))
         refreshLikeButton()
+        updateWidget(player)
+    }
+
+    /** Paint the home-screen widget with the current song / play state. */
+    private fun updateWidget(player: Player) {
+        serviceScope.launch {
+            val track = runCatching { player.currentMediaItem?.toTrack() }.getOrNull()
+            PlayerWidget.update(this@PlaybackService, track, player.isPlaying)
+        }
+    }
+
+    /** Widget transport buttons arrive here as start-service intents. */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val p = session?.player
+        when (intent?.action) {
+            PlayerWidget.ACTION_PLAY_PAUSE -> {
+                if (p != null) {
+                    if (p.isPlaying) p.pause() else p.play()
+                    updateWidget(p)
+                }
+            }
+            PlayerWidget.ACTION_NEXT -> {
+                if (p != null && p.hasNextMediaItem()) {
+                    p.seekToNextMediaItem()
+                    if (!p.isPlaying) p.play()
+                    updateWidget(p)
+                }
+            }
+            PlayerWidget.ACTION_PREV -> {
+                if (p != null) {
+                    p.seekToPreviousMediaItem()
+                    if (!p.isPlaying) p.play()
+                    updateWidget(p)
+                }
+            }
+            PlayerWidget.ACTION_REFRESH -> p?.let { updateWidget(it) }
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     private fun prefetchNext(player: Player) {

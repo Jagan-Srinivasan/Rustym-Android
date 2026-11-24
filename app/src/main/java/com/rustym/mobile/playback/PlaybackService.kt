@@ -121,7 +121,10 @@ object AudioCache {
  * and music keeps playing when the app is closed.
  */
 class PlaybackService : MediaSessionService() {
-    companion object { private const val ACTION_TOGGLE_LIKE = "com.rustym.mobile.action.TOGGLE_LIKE" }
+    companion object {
+    private const val ACTION_TOGGLE_LIKE = "com.rustym.mobile.action.TOGGLE_LIKE"
+    private const val ACTION_ROUTE_TO_DEVICE = "com.rustym.mobile.action.ROUTE_TO_DEVICE"
+}
     private var session: MediaSession? = null
     private lateinit var library: Library
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -229,7 +232,8 @@ class PlaybackService : MediaSessionService() {
                 controller: MediaSession.ControllerInfo,
             ): MediaSession.ConnectionResult {
                 val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
-                    .buildUpon().add(likeCommand).build()
+                    .buildUpon().add(likeCommand)
+                    .add(SessionCommand(ACTION_ROUTE_TO_DEVICE, Bundle.EMPTY)).build()
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(commands)
                     .build()
@@ -256,6 +260,19 @@ class PlaybackService : MediaSessionService() {
                                 }
                             }
                         }
+                    }
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
+                if (customCommand.customAction == ACTION_ROUTE_TO_DEVICE) {
+                    // The audio sink lives on ExoPlayer, so routing requests come through the session.
+                    val id = args.getInt("id", -1)
+                    val type = args.getInt("type", -1)
+                    runCatching {
+                        val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+                        val device = if (id == -1) null else
+                            am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+                                .firstOrNull { it.id == id && it.type == type }
+                        (session.player as? ExoPlayer)?.setPreferredAudioDevice(device)
                     }
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }

@@ -292,6 +292,23 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         if (c.isPlaying) c.pause() else c.play()
     }
 
+        /** Route audio to a specific output device (null = follow the system). */
+    fun routeAudioTo(device: android.media.AudioDeviceInfo?) {
+        val c = controller ?: return
+        val args = android.os.Bundle()
+        args.putInt("id", device?.id ?: -1)
+        args.putInt("type", device?.type ?: -1)
+        runCatching {
+            c.sendCustomCommand(
+                androidx.media3.session.SessionCommand(
+                    "com.rustym.mobile.action.ROUTE_TO_DEVICE",
+                    android.os.Bundle.EMPTY,
+                ),
+                args,
+            )
+        }
+    }
+
     fun next() {
         val c = controller ?: return
         if (crossfadeSeconds <= 0 || !c.isPlaying || !c.hasNextMediaItem()) {

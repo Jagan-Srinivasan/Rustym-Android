@@ -642,7 +642,7 @@ private fun outputDeviceLabel(type: Int): String = when (type) {
 
 /** Lists the audio output devices (speaker, wired, Bluetooth, USB) attached to the phone. */
 @Composable
-private fun OutputDevicesDialog(onDismiss: () -> Unit) {
+private fun OutputDevicesDialog(vm: PlayerVM, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val am = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
     val devices = remember {
@@ -662,8 +662,22 @@ private fun OutputDevicesDialog(onDismiss: () -> Unit) {
         title = { Text("Output devices") },
         text = {
             Column {
+                Text("Tap a device to route audio there", color = Dim, style = MaterialTheme.typography.bodySmall)
+                Row(
+                    Modifier.fillMaxWidth().clickable { vm.routeAudioTo(null); onDismiss() }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(outputDeviceIcon(android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER), null, Modifier.size(22.dp), tint = Accent)
+                    Column(Modifier.padding(start = 14.dp)) {
+                        Text("Default (system)", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Follow the system output", color = Dim, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 devices.forEach { d ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { vm.routeAudioTo(d); onDismiss() }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(outputDeviceIcon(d.type), null, Modifier.size(22.dp), tint = Accent)
                         Column(Modifier.padding(start = 14.dp)) {
                             Text(d.productName.ifBlank { outputDeviceLabel(d.type) }.toString(), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -930,7 +944,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             }
         }
         Box(Modifier.size(14.dp))
-        if (showOutput) OutputDevicesDialog { showOutput = false }
+        if (showOutput) OutputDevicesDialog(vm) { showOutput = false }
         if (showFx) SoundFxDialog { showFx = false }
     }
     }

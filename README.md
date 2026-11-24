@@ -14,7 +14,55 @@ it contains no native code, so it runs on arm64, armv7, x86 and x86_64 devices a
   headset-button controls; pauses when headphones are unplugged; skips tracks that fail to load
 - No account, no API key, no ads
 
-Not included: equaliser/pitch effects, tray.
+
+## Legal disclaimer & terms of use
+
+**Rustym is free, open-source software, provided "AS IS", with no warranty of any kind.** Read this
+section carefully before using or distributing the app.
+
+**1. What Rustym is.** Rustym is a personal media player for Android. It is a specialised *client*
+that presents publicly available content from YouTube Music and your own device in a different
+interface, the same way a web browser does. It adds nothing to the content it shows, holds no
+database of songs, and streams audio **directly from the platform's own servers to your device**.
+
+**2. No hosting of copyrighted material.** The Rustym project does not host, upload, distribute,
+store or re-transmit any audio, video, lyrics or other copyrighted media on its own or on any
+third-party server controlled by the developer. All content available through the app lives on the
+servers of the platforms it connects to (YouTube/YouTube Music, lyric providers, etc.) and remains
+the property of its respective copyright owners. Because no copyrighted media is hosted here,
+copyright takedown requests for audio or video content cannot be actioned by this project — contact
+the platform actually serving the content instead. Questions about this code base itself may be
+sent to **jaganrmkcet@gmail.com**.
+
+**3. Intended use.** Rustym is intended strictly for **personal, non-commercial use**. It contains
+no advertising, no monetisation, no paid features and no revenue of any kind. You may not sell it,
+bundle it with paid products, or operate it as a service for others.
+
+**4. Your responsibility as a user.** You are solely responsible for ensuring that your use of
+Rustym complies with (a) the terms of service of the platforms you access through it, and (b) the
+copyright laws of your country, including any personal-use or private-copying exceptions you may
+rely on. Accessing a platform through a third-party client may be contrary to that platform's terms
+of service; if that matters to you, do not use those parts of the app. The developer does not
+encourage, support or condone piracy, and gains nothing from how you use the app.
+
+**5. Platform changes.** The app talks to unofficial interfaces of third-party platforms. Those
+platforms may change or restrict them at any time, which can break features without notice. That is
+an accepted reality of this kind of client, not a defect the developer can or will "fix" forever.
+
+**6. Your data.** Sign-in sessions are stored **only on your device**, encrypted with Android
+Keystore. Nothing about you is sent to the developer — there is no analytics, no crash reporting
+service and no telemetry. Playback history, favourites and caches live in your app's private
+storage and can be erased from **Settings → Data & storage** at any time.
+
+**7. No affiliation.** Rustym is not affiliated with, endorsed by, or connected to Google, YouTube,
+YouTube Music, Deezer, LRCLIB, NetEase, KuGou, Lyrics.ovh or any other platform or provider it can
+reach. All product names and trademarks belong to their respective owners and are used only to
+describe functionality.
+
+**8. Limitation of liability.** To the maximum extent permitted by law, the developer is not liable
+for any damages, account restrictions, data loss or legal consequences arising from your use of the
+app. If you do not accept these terms, do not use or redistribute the software.
+
 
 ## Google sign-in
 Tap **Sign in** (Home or Library). You get Google's real sign-in page inside the app, so password, 2-step

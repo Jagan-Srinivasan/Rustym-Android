@@ -120,22 +120,6 @@ directly with smart title/artist/duration matching. LyricsPlus and YouTube Music
 not integrated because neither exposes a documented, stable public API for unauthenticated use —
 the app does not claim providers it does not actually use.
 
-## 📦 Get the APK (no Android Studio needed)
-
-1. Create a new empty GitHub repository and upload everything in this folder (keep the `.github`
-   folder).
-2. Keep `.github/workflows/build-apk.yml` at the repository root. Open **Actions → Build Rustym
-   APK** → **Run workflow** (it also runs on pushes to `main`).
-3. When it finishes (5–8 min), open the run and download the **Rustym-apk** artifact → `Rustym.apk`.
-4. Copy it to the phone, open it, allow "Install unknown apps" when asked.
-
-### Build locally
-Install Android Studio (or JDK 17 + Android SDK 35) and Gradle 8.9, then:
-
-    gradle :app:assembleRelease
-
-The APK is written to `app/build/outputs/apk/release/app-release.apk`.
-
 ## 📝 Notes
 
 - The APK is signed with the included `app/rustym.keystore` (password `rustym123`) so updates

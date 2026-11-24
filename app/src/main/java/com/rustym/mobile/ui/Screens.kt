@@ -110,6 +110,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.rustym.mobile.data.Track
 import com.rustym.mobile.data.Yt
+import com.rustym.mobile.data.Ytm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -265,9 +266,9 @@ fun SearchScreen(vm: PlayerVM) {
         when {
             error != null -> {
                 EmptyNote(error!!)
-                TextButton(Modifier.align(Alignment.CenterHorizontally), onClick = { error = null; doSearch(query.trim()) }) { Text("Retry", color = Accent) }
+                TextButton(onClick = { error = null; doSearch(query.trim()) }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Retry", color = Accent) }
             }
-            list != null && list.isEmpty() -> EmptyNote("Nothing found for "$query".")
+            list != null && list.isEmpty() -> EmptyNote("Nothing found for \"$query\".")
             list != null -> {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Songs", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -286,7 +287,7 @@ fun SearchScreen(vm: PlayerVM) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(Icons.Filled.Search, null, Modifier.size(20.dp), tint = Accent)
-                        Text("Search for "$query"", Modifier.padding(start = 14.dp), style = MaterialTheme.typography.bodyLarge, color = Accent)
+                        Text("Search for \"$query\"", Modifier.padding(start = 14.dp), style = MaterialTheme.typography.bodyLarge, color = Accent)
                     }
                 }
                 items(suggestions, key = { "s-$it" }) { s ->

@@ -1364,13 +1364,20 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                                     c.connectTimeout = 8000
                                     c.readTimeout = 8000
                                     c.setRequestProperty("Accept", "application/vnd.github+json")
-                                    val body = c.inputStream.bufferedReader().use { it.readText() }
-                                    val obj = org.json.JSONObject(body)
-                                    obj.optString("tag_name") to obj.optString("html_url")
+                                    val code = c.responseCode
+                                    if (code == 404) "none" to ""                       // no releases published yet
+                                    else if (code !in 200..299) "error" to ""
+                                    else {
+                                        val body = c.inputStream.bufferedReader().use { it.readText() }
+                                        val obj = org.json.JSONObject(body)
+                                        obj.optString("tag_name") to obj.optString("html_url")
+                                    }
                                 }.getOrElse { "error" to "" }
                             }
                             checking = false
                             when {
+                                result.first == "none" ->
+                                    updateStatus = "No releases published yet."
                                 result.first == "error" ->
                                     updateStatus = "Couldn't check for updates - check your connection."
                                 isNewer(result.first.removePrefix("v").removePrefix("V"), versionName) -> {

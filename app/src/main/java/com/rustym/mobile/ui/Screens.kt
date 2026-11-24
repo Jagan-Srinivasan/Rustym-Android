@@ -13,6 +13,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -1075,8 +1076,11 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 }
             }
         } else if (t != null) {
-            Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
-                Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), 320.dp, corner = 26.dp, modifier = Modifier.padding(bottom = 8.dp))
+            // Album art scales to the space between the top bar and the song info,
+            // so no dead gap is left above the card.
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                val artSize = minOf(maxWidth, maxHeight) - 20.dp
+                Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), artSize, corner = 26.dp)
             }
             var editLyrics by remember(t.id) { mutableStateOf(false) }
             val lyricLines = remember(vm.lyricsText) { vm.syncedLyricLines() }

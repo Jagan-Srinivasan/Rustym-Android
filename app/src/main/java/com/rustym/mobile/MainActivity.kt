@@ -101,6 +101,10 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
+    // The whole app wears the colour of the last played song, from the very first frame.
+    LaunchedEffect(Unit) {
+        vm.applyLastPlayedArtworkColor(vm.recent.firstOrNull()?.thumb)
+    }
     LaunchedEffect(vm.message) {
         vm.message?.let { snackbar.showSnackbar(it); vm.message = null }
     }

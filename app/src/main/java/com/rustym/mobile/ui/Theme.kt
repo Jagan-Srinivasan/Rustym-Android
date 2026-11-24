@@ -119,11 +119,36 @@ object ThemeStore {
         prefs?.edit()?.putBoolean(DYNAMIC_KEY, enabled)?.apply()
     }
 
+    /** Colours the whole app from the last played song: accent + tinted background/surfaces. */
     fun applyArtworkAccent(color: Color) {
-        palette = basePalette.withAccent(color)
+        palette = basePalette.withArtwork(color)
     }
 
     private fun Palette.withAccent(color: Color) = Palette(name, isLight, color, bg, surface1, surface2, dim, onBg)
+
+    /** Blend the artwork colour into bg + surfaces so every section follows the song. */
+    private fun Palette.withArtwork(color: Color): Palette {
+        val bgWeight = when {
+            isLight -> 0.10f
+            bg == AmoledPalette.bg -> 0.12f
+            else -> 0.18f
+        }
+        return Palette(
+            name = name, isLight = isLight,
+            accent = color,
+            bg = mix(bg, color, bgWeight),
+            surface1 = mix(surface1, color, bgWeight * 0.55f),
+            surface2 = mix(surface2, color, bgWeight * 0.45f),
+            dim = dim, onBg = onBg,
+        )
+    }
+
+    private fun mix(a: Color, b: Color, t: Float) = Color(
+        red = a.red * (1 - t) + b.red * t,
+        green = a.green * (1 - t) + b.green * t,
+        blue = a.blue * (1 - t) + b.blue * t,
+        alpha = 1f,
+    )
 }
 
 val LocalPalette = staticCompositionLocalOf { MidnightPalette }

@@ -229,6 +229,11 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Apply the artwork colour of the last played song at cold start. */
+    fun applyLastPlayedArtworkColor(url: String?) {
+        if (!url.isNullOrBlank()) loadArtworkAccent(url)
+    }
+
     private fun loadArtworkAccent(url: String) {
         if (url.isBlank()) return
         viewModelScope.launch {

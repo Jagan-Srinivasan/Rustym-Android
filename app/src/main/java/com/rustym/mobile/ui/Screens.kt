@@ -113,9 +113,6 @@ import androidx.media3.common.Player
 import com.rustym.mobile.data.Track
 import com.rustym.mobile.data.Yt
 import com.rustym.mobile.data.Ytm
-import android.graphics.BitmapFactory
-import androidx.palette.graphics.Palette as AndroidPalette
-import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -132,26 +129,6 @@ private val HomeMoods = linkedMapOf(
     "Romance" to "romantic love songs",
 )
 
-/** Vibrant colour from the last played song's artwork - tints the home page. */
-@Composable
-private fun rememberLastPlayedTint(latestId: String?, thumbUrl: String): Color? {
-    var tint by remember(latestId) { mutableStateOf<Color?>(null) }
-    LaunchedEffect(latestId) {
-        if (latestId == null || thumbUrl.isBlank()) return@LaunchedEffect
-        tint = withContext(Dispatchers.IO) {
-            runCatching {
-                val connection = URL(thumbUrl).openConnection().apply { connectTimeout = 5000; readTimeout = 5000 }
-                connection.getInputStream().use { input ->
-                    val bitmap = BitmapFactory.decodeStream(input) ?: return@runCatching null
-                    val palette = AndroidPalette.from(bitmap).generate()
-                    (palette.vibrantSwatch?.rgb ?: palette.dominantSwatch?.rgb)?.let { Color(it) }
-                }
-            }.getOrNull()
-        }
-    }
-    return tint
-}
-
 @Composable
 fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
     var mood by remember { mutableStateOf("All") }
@@ -166,9 +143,8 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
         if (picks == null) failed = true
     }
 
-    // The home page wears the colour of the last played song.
-    val tint = rememberLastPlayedTint(vm.recent.firstOrNull()?.id, vm.recent.firstOrNull()?.thumb.orEmpty())
-        ?: Accent
+    // The accent already follows the last played song (app-wide artwork tint).
+    val tint = Accent
 
     LazyColumn(Modifier.fillMaxSize()) {
         // ---- greeting header, tinted with the last played song

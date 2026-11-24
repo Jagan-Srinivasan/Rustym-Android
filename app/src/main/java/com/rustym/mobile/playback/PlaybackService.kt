@@ -18,7 +18,9 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSinkimport androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import android.content.Intent
 import androidx.media3.session.SessionCommand
@@ -163,8 +165,26 @@ class PlaybackService : MediaSessionService() {
         AudioCache.initialize(this, resolvedUpstream)
         val dataSources = AudioCache.dataSourceFactory()
 
-        // Standard Media3 audio pipeline; the former 8D PCM processor has been removed.
-        val player = ExoPlayer.Builder(this)
+        // Standard Media3 audio pipeline with the 8D rotation processor in the sink chain.
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: android.content.Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+                enableOffload: Boolean,
+            ): AudioSink? {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setOffloadMode(
+                        if (enableOffload) DefaultAudioSink.OFFLOAD_MODE_ENABLED_GAPLESS_REQUIRED
+                        else DefaultAudioSink.OFFLOAD_MODE_DISABLED
+                    )
+                    .setAudioProcessors(arrayOf(EightDAudioProcessor()))
+                    .build()
+            }
+        }
+        val player = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSources))
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -197,7 +217,12 @@ class PlaybackService : MediaSessionService() {
                     player.play()
                 }
             }
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                AudioFx.attach(audioSessionId)
+            }
         })
+        AudioFx.init(this)
+        AudioFx.attach(player.audioSessionId)
 
         val likeCommand = SessionCommand(ACTION_TOGGLE_LIKE, Bundle.EMPTY)
         library = Library(this)
@@ -307,6 +332,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        AudioFx.release()
         serviceScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         getSharedPreferences("library", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(favoritesListener)
         session?.run {

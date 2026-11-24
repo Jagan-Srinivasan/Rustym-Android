@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.blur
@@ -36,10 +37,12 @@ import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.heightInimport androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.Brush
@@ -756,6 +759,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
     var dragValue by remember { mutableStateOf(0f) }
     var showQueue by remember { mutableStateOf(false) }
     var showOutput by remember { mutableStateOf(false) }
+    var showFx by remember { mutableStateOf(false) }
 
     LaunchedEffect(t?.id, vm.isPlaying) {
         while (true) {
@@ -912,6 +916,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = vm::toggleShuffle) { Icon(Icons.Filled.Shuffle, "Shuffle", tint = if (vm.shuffle) Accent else Dim) }
             IconButton(onClick = { showQueue = !showQueue }) { Icon(Icons.Filled.QueueMusic, "Queue", tint = if (showQueue) Accent else Dim) }
+            IconButton(onClick = { showFx = true }, modifier = Modifier.size(26.dp)) { Icon(Icons.Filled.Tune, "Sound effects", Modifier.size(22.dp), tint = Dim) }
             val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
             AssistChip(onClick = { vm.updatePlaybackSpeed(speeds[(speeds.indexOf(vm.playbackSpeed).coerceAtLeast(0) + 1) % speeds.size]) }, label = { Text("${vm.playbackSpeed}x", color = Accent) })
             IconButton(onClick = vm::cycleRepeat) {
@@ -923,8 +928,110 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
         }
         Box(Modifier.size(14.dp))
         if (showOutput) OutputDevicesDialog { showOutput = false }
+        if (showFx) SoundFxDialog { showFx = false }
     }
     }
+}
+
+// ---- Sound effects: equalizer, bass boost, surround, 8D --------------------
+
+private fun fmtDb(mb: Int): String = "%.1f dB".format(mb / 1000f)
+
+/** Vertical slider for the equalizer bands (rotated M3 slider). */
+@Composable
+private fun VerticalSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            modifier = Modifier.width(150.dp).graphicsLayer { rotationZ = -90f },
+        )
+    }
+}
+
+/** The full sound-effects panel, shared by Settings and the Now Playing popover. */
+@Composable
+fun SoundControls() {
+    val range = AudioFx.bandRange
+    Column {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Equalizer", style = MaterialTheme.typography.titleSmall)
+                Text("Shape the sound across ${AudioFx.bandCount} bands", color = Dim, style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = AudioFx.eqEnabled, onCheckedChange = { AudioFx.setEqEnabled(it) })
+        }
+        if (AudioFx.eqEnabled && AudioFx.bandGains.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                AudioFx.bandGains.forEachIndexed { band, gain ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(fmtDb(gain), style = MaterialTheme.typography.labelSmall, color = Accent)
+                        VerticalSlider(
+                            value = gain.toFloat().coerceIn(range.first.toFloat(), range.second.toFloat()),
+                            onValueChange = { AudioFx.setBandGain(band, it.toInt()) },
+                            valueRange = range.first.toFloat()..range.second.toFloat(),
+                            modifier = Modifier.width(40.dp).height(150.dp),
+                        )
+                        Text(AudioFx.bandLabels.getOrNull(band).orEmpty(), style = MaterialTheme.typography.labelSmall, color = Dim)
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Bass boost", style = MaterialTheme.typography.titleSmall)
+                Text("Deep low-end punch", color = Dim, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("${AudioFx.bassPercent}%", color = Accent, style = MaterialTheme.typography.labelLarge)
+        }
+        Slider(
+            value = AudioFx.bassPercent.toFloat(),
+            onValueChange = { AudioFx.setBass(it.toInt()) },
+            valueRange = 0f..100f,
+        )
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Surround sound", style = MaterialTheme.typography.titleSmall)
+                Text("Widen the stereo field", color = Dim, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("${AudioFx.surroundPercent}%", color = Accent, style = MaterialTheme.typography.labelLarge)
+        }
+        Slider(
+            value = AudioFx.surroundPercent.toFloat(),
+            onValueChange = { AudioFx.setSurround(it.toInt()) },
+            valueRange = 0f..100f,
+        )
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("8D audio", style = MaterialTheme.typography.titleSmall)
+                Text("The sound rotates around your head", color = Dim, style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = AudioFx.eightD, onCheckedChange = { AudioFx.set8D(it) })
+        }
+    }
+}
+
+@Composable
+private fun SoundFxDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sound effects") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 460.dp)) {
+                SoundControls()
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = Accent) } },
+    )
 }
 
 // ---------------------------------------------------------------- Settings
@@ -1086,6 +1193,12 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 val tabs = listOf("Home", "Search", "Device", "Library")
                 SettingsChips(tabs, vm.startTab.coerceIn(0, tabs.lastIndex)) { i -> vm.chooseStartTab(i) }
             }
+        }
+
+        // ---- Sound ----
+        item { SectionTitle("Sound") }
+        item {
+            SettingsCard { SoundControls() }
         }
 
         // ---- Stats ----

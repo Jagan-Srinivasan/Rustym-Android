@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.lazy.LazyColumn
@@ -241,7 +242,7 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
                                 },
                         ) {
                             coil.compose.AsyncImage(
-                                model = t.thumb.replace(Regex("=w\d+-h\d+"), "=w544-h544"),
+                                model = t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w544-h544"),
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,

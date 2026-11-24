@@ -94,6 +94,7 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
     var tab by remember { mutableStateOf(Tab.entries[vm.startTab.coerceIn(0, Tab.entries.lastIndex)]) }
     var showPlayer by remember { mutableStateOf(false) }
     var showLogin by remember { mutableStateOf(false) }
+    var showSignInNotice by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     // Android 13+: notification permission is needed to show the playback controls.
@@ -138,15 +139,21 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
         ) { pad ->
             Box(Modifier.padding(pad)) {
                 when (tab) {
-                    Tab.Home -> HomeScreen(vm) { showLogin = true }
+                    Tab.Home -> HomeScreen(vm) { showSignInNotice = true }
                     Tab.Search -> SearchScreen(vm)
                     Tab.Local -> LocalScreen(vm)
                     Tab.Library -> LibraryScreen(vm)
-                    Tab.Settings -> SettingsScreen(vm) { showLogin = true }
+                    Tab.Settings -> SettingsScreen(vm) { showSignInNotice = true }
                 }
             }
         }
         if (showPlayer) NowPlayingScreen(vm) { showPlayer = false }
+                if (showSignInNotice) {
+            SignInNoticeDialog(
+                onProceed = { showSignInNotice = false; showLogin = true },
+                onDismiss = { showSignInNotice = false },
+            )
+        }
         if (showLogin) LoginScreen(vm) { showLogin = false }
     }
 }

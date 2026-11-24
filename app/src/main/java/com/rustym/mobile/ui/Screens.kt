@@ -642,6 +642,29 @@ private fun outputDeviceLabel(type: Int): String = when (type) {
 
 /** Lists the audio output devices (speaker, wired, Bluetooth, USB) attached to the phone. */
 @Composable
+/** Shown before the Google flow: explains exactly what sign-in is for. */
+@Composable
+fun SignInNoticeDialog(onProceed: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sign in with Google?") },
+        text = {
+            Column {
+                Text("Rustym uses Google sign-in for one thing only:")
+                Spacer(Modifier.height(6.dp))
+                Text("• Fetching your YouTube Music liked songs", color = Dim)
+                Text("• Your playlists and recommendations", color = Dim)
+                Spacer(Modifier.height(6.dp))
+                Text("No other personal information goes out of this app. Your session is stored encrypted on this device (Android Keystore), is never sent anywhere else, and is never seen by the developer.", color = Dim)
+                Spacer(Modifier.height(6.dp))
+                Text("You can also use Rustym fully without signing in - search, playback, local music and offline favourites all work.", color = Dim)
+            }
+        },
+        confirmButton = { TextButton(onClick = onProceed) { Text("Continue", color = Accent) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Not now", color = Dim) } },
+    )
+}
+
 private fun OutputDevicesDialog(vm: PlayerVM, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val am = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
@@ -1321,7 +1344,8 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(repo)))
                             }
                         })
-                Text("Lyrics come from Unison, Better Lyrics, KuGou, LRCLIB, NetEase and Lyrics.ovh. Audio streams directly from YouTube Music.", color = Dim, style = MaterialTheme.typography.bodySmall)
+                Text("How Rustym works: audio streams from YouTube Music; lyrics come from Unison, Better Lyrics, KuGou, LRCLIB, NetEase and Lyrics.ovh. Nothing is uploaded anywhere - the app only reads public content and your own library.", color = Dim, style = MaterialTheme.typography.bodySmall)
+                Text("Google sign-in is used only to fetch your liked songs, playlists and recommendations. Your session is stored encrypted on this device and no personal information leaves the app.", color = Dim, style = MaterialTheme.typography.bodySmall)
             }
         }
         item { Spacer(Modifier.height(16.dp)) }

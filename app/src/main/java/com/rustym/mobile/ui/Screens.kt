@@ -190,6 +190,24 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 AccountButton(vm, onLogin)
             }
         }
+        // ---- mood filter chips
+        item {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HomeMoods.keys.forEach { m ->
+                    FilterChip(
+                        selected = mood == m,
+                        onClick = { mood = m },
+                        label = { Text(m) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = Surface2,
+                            labelColor = MaterialTheme.colorScheme.onBackground,
+                            selectedContainerColor = tint,
+                            selectedLabelColor = Color.White,
+                        ),
+                    )
+                }
+            }
+        }
         // ---- liked songs + trending + your playlists (two-column tiles)
         item {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -207,24 +225,6 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
                         }
                         if (row.size == 1) Box(Modifier.weight(1f))
                     }
-                }
-            }
-        }
-        // ---- mood filter chips
-        item {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HomeMoods.keys.forEach { m ->
-                    FilterChip(
-                        selected = mood == m,
-                        onClick = { mood = m },
-                        label = { Text(m) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            containerColor = Surface2,
-                            labelColor = MaterialTheme.colorScheme.onBackground,
-                            selectedContainerColor = tint,
-                            selectedLabelColor = Color.White,
-                        ),
-                    )
                 }
             }
         }
@@ -301,6 +301,7 @@ private fun HomeLikedTile(vm: PlayerVM, modifier: Modifier = Modifier, onClick: 
     val liked = vm.favorites
     Surface(
         modifier = modifier
+            .height(72.dp)
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
@@ -318,7 +319,7 @@ private fun HomeLikedTile(vm: PlayerVM, modifier: Modifier = Modifier, onClick: 
             }
             Column(Modifier.weight(1f).padding(start = 10.dp)) {
                 Text("Liked songs", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${liked.size} songs", color = Dim, style = MaterialTheme.typography.bodySmall)
+                Text("${liked.size} songs", color = Dim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -329,6 +330,7 @@ private fun HomeLikedTile(vm: PlayerVM, modifier: Modifier = Modifier, onClick: 
 private fun HomePlaylistTile(name: String, tracks: List<Track>, modifier: Modifier = Modifier, subtitle: String? = null, onClick: () -> Unit) {
     Surface(
         modifier = modifier
+            .height(72.dp)
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
@@ -350,7 +352,7 @@ private fun HomePlaylistTile(name: String, tracks: List<Track>, modifier: Modifi
             }
             Column(Modifier.weight(1f).padding(start = 10.dp)) {
                 Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle ?: "${tracks.size} songs", color = Dim, style = MaterialTheme.typography.bodySmall)
+                Text(subtitle ?: "${tracks.size} songs", color = Dim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

@@ -93,6 +93,7 @@ import androidx.compose.material3.Divider
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -1338,13 +1339,13 @@ fun SoundControls() {
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 AudioFx.bandGains.forEachIndexed { band, gain ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 2.dp)) {
                         Text(fmtDb(gain), style = MaterialTheme.typography.labelSmall, color = Accent)
                         VerticalSlider(
                             value = gain.toFloat().coerceIn(range.first.toFloat(), range.second.toFloat()),
                             onValueChange = { AudioFx.setBandGain(band, it.toInt()) },
                             valueRange = range.first.toFloat()..range.second.toFloat(),
-                            modifier = Modifier.width(40.dp).height(150.dp),
+                            modifier = Modifier.width(44.dp).height(150.dp),
                         )
                         Text(AudioFx.bandLabels.getOrNull(band).orEmpty(), style = MaterialTheme.typography.labelSmall, color = Dim)
                     }
@@ -1389,9 +1390,17 @@ fun SoundControls() {
 private fun SoundFxDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        // Wide dialog: the 5-band equalizer needs more horizontal room than the
+        // platform default dialog width gives it.
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         title = { Text("Sound effects") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 460.dp)) {
+            Column(
+                Modifier
+                    .fillMaxWidth(0.92f)
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(max = 520.dp)
+            ) {
                 SoundControls()
             }
         },

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Switch
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.heightIn
@@ -492,10 +493,10 @@ fun LibraryScreen(vm: PlayerVM) {
 
     LaunchedEffect(tab, vm.account) {
         if (tab == LibTab.Favourites) vm.loadLiked()
-        if (tab == LibTab.Playlists) vm.loadPlaylists()
+        if (tab == LibTab.Playlists) { vm.loadPlaylists(); vm.loadLocalPlaylists() }
     }
     // leaving the Playlists tab closes an opened playlist
-    LaunchedEffect(tab) { if (tab != LibTab.Playlists) vm.closePlaylist() }
+    LaunchedEffect(tab) { if (tab != LibTab.Playlists) { vm.closePlaylist(); vm.closeLocalPlaylist() } }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -523,7 +524,20 @@ fun LibraryScreen(vm: PlayerVM) {
             LibTab.Recent -> TrackList(vm, vm.recent, "Songs you play show up here.", clearable = true)
             LibTab.Stats -> StatsPanel(vm)
             LibTab.Playlists -> when {
-                vm.account == null -> EmptyNote("Sign in with Google in Settings to browse your YouTube Music playlists.")
+                vm.localOpenedName != null -> {
+                    Column(Modifier.fillMaxSize()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
+                            IconButton(onClick = vm::closeLocalPlaylist) { Icon(Icons.Filled.KeyboardArrowDown, "Back", Modifier.rotate(90f)) }
+                            Text(vm.localOpenedName.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = {
+                                vm.deleteLocalPlaylist(vm.localOpenedName.orEmpty()); vm.closeLocalPlaylist()
+                            }) { Icon(Icons.Filled.Delete, "Delete playlist", tint = Dim) }
+                        }
+                        TrackList(vm, vm.localOpenedTracks, "No songs from this playlist matched - try another.")
+                    }
+                }
+                vm.account == null -> SpotifyPlaylistsView(vm, signedIn = false)
                 vm.openedPlaylist != null -> {
                     val p = vm.openedPlaylist!!
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
@@ -534,12 +548,48 @@ fun LibraryScreen(vm: PlayerVM) {
                         TrackList(vm, list, "This playlist is empty.")
                     }
                 }
-                else -> YtState(vm, vm.playlists, retry = { vm.loadPlaylists(force = true) }) { list ->
-                    if (list.isEmpty()) EmptyNote("No playlists found in your library.")
-                    else LazyColumn(Modifier.fillMaxSize()) {
-                        items(list, key = { it.browseId }) { c ->
+                else -> SpotifyPlaylistsView(vm, signedIn = true)
+            }
+        }
+    }
+}
+
+/** Import-from-Spotify card + locally imported playlists (+ YT playlists when signed in). */
+@Composable
+private fun SpotifyPlaylistsView(vm: PlayerVM, signedIn: Boolean) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { SpotifyImportCard(vm) }
+        if (vm.localPlaylists.isNotEmpty()) {
+            item { SectionTitle("Your imported playlists") }
+            items(vm.localPlaylists, key = { it.first }) { (name, tracks) ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(16.dp)).background(Surface1)
+                        .clickable { vm.openLocalPlaylist(name) }.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(Icons.Filled.QueueMusic, null, Modifier.size(40.dp), tint = Accent)
+                    Column(Modifier.weight(1f)) {
+                        Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${tracks.size} songs · imported from Spotify", color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                    }
+                    IconButton(onClick = { vm.deleteLocalPlaylist(name) }) {
+                        Icon(Icons.Filled.Delete, "Delete", tint = Dim)
+                    }
+                }
+            }
+        }
+        if (!signedIn) {
+            item { EmptyNote("Sign in with Google in Settings to browse your YouTube Music playlists too.") }
+        } else {
+            item { SectionTitle("YouTube Music") }
+            item {
+                YtState(vm, vm.playlists, retry = { vm.loadPlaylists(force = true) }) { list ->
+                    if (list.isEmpty()) EmptyNote("No playlists found in your YouTube Music library.")
+                    else Column {
+                        list.forEach { c ->
                             Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                                Modifier.fillMaxWidth().padding(vertical = 4.dp)
                                     .clip(RoundedCornerShape(16.dp)).background(Surface1)
                                     .clickable { vm.openPlaylist(c) }.padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -555,6 +605,59 @@ fun LibraryScreen(vm: PlayerVM) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SpotifyImportCard(vm: PlayerVM) {
+    val context = LocalContext.current
+    var show by remember { mutableStateOf(false) }
+    var link by remember { mutableStateOf("") }
+    Surface(shape = RoundedCornerShape(18.dp), color = Surface1, modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(46.dp).clip(RoundedCornerShape(14.dp)).background(Accent), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.QueueMusic, null, tint = Color.White)
+            }
+            Column(Modifier.weight(1f)) {
+                Text("Import Spotify playlist", style = MaterialTheme.typography.titleSmall)
+                Text("Paste a share link - songs are matched on YouTube Music", color = Dim, style = MaterialTheme.typography.bodySmall)
+                vm.importProgress?.let { p ->
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Accent)
+                        Text(p, color = Accent, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            TextButton(onClick = {
+                if (vm.importProgress == null) show = true
+            }) { Text("Import", color = Accent) }
+        }
+    }
+    if (show) {
+        AlertDialog(
+            onDismissRequest = { show = false },
+            title = { Text("Import Spotify playlist") },
+            text = {
+                Column {
+                    Text("Paste the playlist link you get from Spotify's Share button.", color = Dim, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = link,
+                        onValueChange = { link = it },
+                        placeholder = { Text("https://open.spotify.com/playlist/…") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = link.isNotBlank() && vm.importProgress == null,
+                    onClick = { vm.importSpotifyPlaylist(link.trim()); show = false },
+                ) { Text("Import", color = Accent) }
+            },
+            dismissButton = { TextButton(onClick = { show = false }) { Text("Cancel", color = Dim) } },
+        )
     }
 }
 

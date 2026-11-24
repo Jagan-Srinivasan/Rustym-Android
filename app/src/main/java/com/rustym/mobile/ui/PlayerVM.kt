@@ -28,6 +28,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import com.rustym.mobile.data.Track
+import com.rustym.mobile.data.SpotifyImport
 import com.rustym.mobile.data.toMediaItem
 import com.rustym.mobile.data.toTrack
 import com.rustym.mobile.playback.PlaybackService
@@ -714,6 +715,84 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
     }
 
     fun closePlaylist() { openedPlaylist = null; openedTracks = null; ytError = null }
+
+    // ---- Spotify playlist import (local, no sign-in needed) ----
+
+    var localPlaylists by mutableStateOf<List<Pair<String, List<Track>>>>(emptyList())
+        private set
+    var localOpenedName by mutableStateOf<String?>(null)
+        private set
+    var localOpenedTracks by mutableStateOf<List<Track>>(emptyList())
+        private set
+    var importProgress by mutableStateOf<String?>(null)
+        private set
+
+    fun loadLocalPlaylists() {
+        localPlaylists = library.localPlaylists()
+    }
+
+    fun openLocalPlaylist(name: String) {
+        localOpenedName = name
+        localOpenedTracks = localPlaylists.firstOrNull { it.first == name }?.second.orEmpty()
+    }
+
+    fun closeLocalPlaylist() { localOpenedName = null; localOpenedTracks = emptyList() }
+
+    fun deleteLocalPlaylist(name: String) {
+        library.deleteLocalPlaylist(name)
+        if (localOpenedName == name) closeLocalPlaylist()
+        loadLocalPlaylists()
+    }
+
+    /**
+     * Fetch the Spotify playlist's public track list and match every song on
+     * YouTube Music (4 concurrent lookups), then save it as a local playlist.
+     */
+    fun importSpotifyPlaylist(link: String) {
+        if (importProgress != null) return
+        viewModelScope.launch {
+            try {
+                importProgress = "Resolving playlist…"
+                val id = SpotifyImport.extractPlaylistId(link)
+                    ?: throw IllegalArgumentException("That doesn't look like a Spotify playlist link.")
+                val sp = SpotifyImport.fetch(id)
+                if (sp.tracks.isEmpty()) throw IllegalStateException("That playlist has no tracks.")
+
+                val wanted = sp.tracks.take(100)
+                val total = wanted.size
+                val done = java.util.concurrent.atomic.AtomicInteger(0)
+                val permits = kotlinx.coroutines.sync.Semaphore(4)
+                val matched = kotlinx.coroutines.coroutineScope {
+                    wanted.map { t ->
+                        kotlinx.coroutines.async(Dispatchers.IO) {
+                            kotlinx.coroutines.sync.withPermit(permits) {
+                                val found = runCatching {
+                                    Yt.search("${t.title} ${t.artists}").firstOrNull()
+                                }.getOrNull()
+                                importProgress = "Matching ${done.incrementAndGet()}/$total - ${t.title.take(28)}…"
+                                found
+                            }
+                        }
+                    }.awaitAll()
+                }
+                val tracks = matched.filterNotNull()
+                importProgress = null
+                if (tracks.isEmpty()) {
+                    message = "Couldn't match any songs from that playlist - try another."
+                } else {
+                    library.saveLocalPlaylist(sp.name, tracks)
+                    loadLocalPlaylists()
+                    message = "Imported ${tracks.size} of ${sp.tracks.size} songs from '${sp.name}'"
+                }
+            } catch (e: IllegalArgumentException) {
+                importProgress = null
+                message = e.message
+            } catch (e: Exception) {
+                importProgress = null
+                message = "Import failed - ${e.message ?: "Spotify could not be reached"}"
+            }
+        }
+    }
 
     override fun onCleared() {
         controller?.removeListener(listener)

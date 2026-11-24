@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -177,58 +178,179 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
 
 // ---------------------------------------------------------------- Search
 
+private val ExploreMoods = listOf(
+    "Trending hits", "Punjabi hits", "Telugu hits", "Tamil hits", "Bollywood 2000s",
+    "Love songs", "Workout", "Chill lo-fi", "Party", "Sad songs", "Road trip", "Classics",
+)
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(vm: PlayerVM) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("rustym_settings", android.content.Context.MODE_PRIVATE) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Track>?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var recent by remember { mutableStateOf(prefs.getString("recent_searches", "")!!.split("|").filter { it.isNotBlank() }) }
+    var trending by remember { mutableStateOf<List<Track>?>(null) }
     val scope = rememberCoroutineScope()
     val focus: FocusManager = LocalFocusManager.current
 
-    fun doSearch() {
-        val q = query.trim()
+    fun saveRecent(q: String) {
+        val list = (listOf(q) + recent.filter { it != q }).take(8)
+        recent = list
+        prefs.edit().putString("recent_searches", list.joinToString("|")).apply()
+    }
+
+    fun clearRecent() {
+        recent = emptyList()
+        prefs.edit().remove("recent_searches").apply()
+    }
+
+    fun doSearch(q: String = query.trim()) {
         if (q.isEmpty()) return
+        query = q
         focus.clearFocus()
         loading = true
         error = null
+        suggestions = emptyList()
+        saveRecent(q)
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { Yt.search(q) } }
             loading = false
-            r.onSuccess { results = it; vm.prefetchTracks(it.take(7)) }.onFailure { error = "Search failed: ${it.message ?: "network error"}" }
+            r.onSuccess { results = it; vm.prefetchTracks(it.take(7)) }
+                .onFailure { error = "Search failed: ${it.message ?: "network error"}" }
+        }
+    }
+
+    // Live YouTube Music suggestions while typing (debounced).
+    LaunchedEffect(query, loading) {
+        if (loading || query.isBlank()) { suggestions = emptyList(); return@LaunchedEffect }
+        delay(280)
+        suggestions = withContext(Dispatchers.IO) {
+            runCatching { Ytm.searchSuggestions(query.trim()) }.getOrDefault(emptyList())
+        }
+    }
+
+    // Trending picks for the idle/explore state.
+    LaunchedEffect(Unit) {
+        if (trending == null) {
+            trending = withContext(Dispatchers.IO) { runCatching { Yt.search("top songs this week").take(12) }.getOrNull() }
         }
     }
 
     Column(Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = query,
-            onValueChange = { query = it },
+            onValueChange = { query = it; if (it.isBlank()) results = null },
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
-            placeholder = { Text("Search songs, artists…") },
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
+            placeholder = { Text("Songs, artists, moods…") },
+            leadingIcon = { Icon(Icons.Filled.Search, null, tint = if (query.isNotBlank()) Accent else Dim) },
             trailingIcon = {
-                if (query.isNotEmpty()) IconButton(onClick = { query = ""; results = null }) { Icon(Icons.Filled.Clear, "Clear") }
+                if (query.isNotEmpty()) IconButton(onClick = { query = ""; results = null; suggestions = emptyList() }) {
+                    Icon(Icons.Filled.Clear, "Clear")
+                }
             },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { doSearch() }),
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(28.dp),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Accent, cursorColor = Accent),
         )
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent)
-        error?.let { EmptyNote(it) }
+
         val list = results
         when {
-            list == null && !loading && error == null -> EmptyNote("Search for a song to get started.")
-            list != null && list.isEmpty() -> EmptyNote("Nothing found.")
-            list != null -> LazyColumn(Modifier.fillMaxSize()) {
-                itemsIndexed(list, key = { i, t -> "$i-${t.id}" }) { i, t ->
-                    TrackRow(t, vm.current?.id == t.id, vm.isFavorite(t.id), { vm.play(list, i) }, { vm.toggleFavorite(t) }, { vm.addToQueue(t) })
+            error != null -> {
+                EmptyNote(error!!)
+                TextButton(Modifier.align(Alignment.CenterHorizontally), onClick = { error = null; doSearch(query.trim()) }) { Text("Retry", color = Accent) }
+            }
+            list != null && list.isEmpty() -> EmptyNote("Nothing found for "$query".")
+            list != null -> {
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Songs", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { results = null; query = ""; suggestions = emptyList() }) { Text("Back to explore", color = Accent) }
+                }
+                LazyColumn(Modifier.fillMaxSize()) {
+                    itemsIndexed(list, key = { i, t -> "$i-${t.id}" }) { i, t ->
+                        TrackRow(t, vm.current?.id == t.id, vm.isFavorite(t.id), { vm.play(list, i) }, { vm.toggleFavorite(t) }, { vm.addToQueue(t) })
+                    }
+                }
+            }
+            query.isNotBlank() && suggestions.isNotEmpty() -> LazyColumn(Modifier.fillMaxSize()) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { doSearch() }.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Filled.Search, null, Modifier.size(20.dp), tint = Accent)
+                        Text("Search for "$query"", Modifier.padding(start = 14.dp), style = MaterialTheme.typography.bodyLarge, color = Accent)
+                    }
+                }
+                items(suggestions, key = { "s-$it" }) { s ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { doSearch(s) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Filled.History, null, Modifier.size(20.dp), tint = Dim)
+                        Text(s, Modifier.padding(start = 14.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            else -> {
+                // ---- explore: recent searches, moods and trending picks
+                if (recent.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Recent", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { clearRecent() }) { Text("Clear", color = Dim) }
+                    }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        recent.forEach { q ->
+                            FilterChip(
+                                selected = false,
+                                onClick = { doSearch(q) },
+                                label = { Text(q, maxLines = 1) },
+                                leadingIcon = { Icon(Icons.Filled.History, null, Modifier.size(18.dp), tint = Dim) },
+                            )
+                        }
+                    }
+                }
+                SectionTitle("Browse")
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ExploreMoods.forEach { mood ->
+                        FilterChip(
+                            selected = false,
+                            onClick = { doSearch(mood) },
+                            label = { Text(mood) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Surface2,
+                                labelColor = MaterialTheme.colorScheme.onBackground,
+                            ),
+                        )
+                    }
+                }
+                SectionTitle("Trending now")
+                val tr = trending
+                when {
+                    tr == null -> Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) { CircularProgressIndicator(color = Accent) }
+                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                        itemsIndexed(tr, key = { i, t -> "tr-$i-${t.id}" }) { i, t ->
+                            TrackRow(t, vm.current?.id == t.id, vm.isFavorite(t.id), { vm.play(tr, i) }, { vm.toggleFavorite(t) }, { vm.addToQueue(t) })
+                        }
+                        item { Box(Modifier.size(16.dp)) }
+                    }
                 }
             }
         }
     }
 }
+
 
 // ---------------------------------------------------------------- Account
 

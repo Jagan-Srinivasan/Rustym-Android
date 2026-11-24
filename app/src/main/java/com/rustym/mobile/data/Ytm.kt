@@ -257,6 +257,26 @@ object Ytm {
         }
     }
 
+    /** Live search suggestions from YouTube Music (music/get_search_suggestions). */
+    fun searchSuggestions(input: String): List<String> {
+        if (input.isBlank()) return emptyList()
+        val json = call("music/get_search_suggestions", JSONObject().put("input", input.trim()))
+        val out = ArrayList<String>()
+        val contents = json.optJSONArray("contents") ?: return out
+        for (i in 0 until contents.length()) {
+            val section = contents.optJSONObject(i)?.optJSONObject("searchSuggestionsSectionRenderer") ?: continue
+            val items = section.optJSONArray("contents") ?: continue
+            for (j in 0 until items.length()) {
+                val s = items.optJSONObject(j)?.optJSONObject("searchSuggestionRenderer") ?: continue
+                val runs = s.optJSONObject("suggestion")?.optJSONObject("suggestionRenderer")
+                    ?.optJSONObject("text")?.optJSONArray("runs") ?: continue
+                val text = (0 until runs.length()).joinToString("") { k -> runs.optJSONObject(k)?.optString("text").orEmpty() }.trim()
+                if (text.isNotBlank() && !out.contains(text)) out.add(text)
+            }
+        }
+        return out
+    }
+
     // ------------------------------------------------------------ public API
 
     /** Who is signed in. Also proves the cookies are accepted. */

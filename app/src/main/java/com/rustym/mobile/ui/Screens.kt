@@ -1079,7 +1079,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             // Album art scales to the space between the top bar and the song info,
             // so no dead gap is left above the card.
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                val artSize = minOf(maxWidth, maxHeight) - 20.dp
+                val artSize = minOf(maxWidth, maxHeight) - 36.dp
                 Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), artSize, corner = 26.dp)
             }
             var editLyrics by remember(t.id) { mutableStateOf(false) }
@@ -1237,7 +1237,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 )
             }
         }
-        Box(Modifier.size(14.dp))
+        Spacer(Modifier.size(28.dp))
         if (showOutput) OutputDevicesDialog(vm) { showOutput = false }
         if (showFx) SoundFxDialog { showFx = false }
         if (showAddTo) AddToPlaylistDialog(vm) { showAddTo = false }

@@ -1144,7 +1144,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                     Icon(Icons.Filled.VolumeDown, "Quieter", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
                     Slider(
                         value = vm.volume,
-                        onValueChange = { vm.setVolume(it) },
+                        onValueChange = { vm.setPlayerVolume(it) },
                         modifier = Modifier.weight(1f),
                         thumb = { Box(Modifier.size(12.dp).clip(CircleShape).background(Color.White)) },
                         track = { state ->

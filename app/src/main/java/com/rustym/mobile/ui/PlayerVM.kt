@@ -296,7 +296,7 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
     }
 
     /** Device/player volume (0..1), exposed for the Now Playing volume slider. */
-    fun setVolume(v: Float) {
+    fun setPlayerVolume(v: Float) {
         volume = v.coerceIn(0f, 1f)
         runCatching { controller?.volume = volume }
     }

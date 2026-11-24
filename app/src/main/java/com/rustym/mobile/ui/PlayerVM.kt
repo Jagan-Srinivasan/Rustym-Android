@@ -632,6 +632,9 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         }
         // Online-song likes are written to YouTube Music only. The local list is a cache
         // of YouTube's Liked Music plus device-local favourites, never a second like store.
+        // The heart fills instantly (optimistic update); YouTube is synced in the background
+        // and the local cache is restored from storage if the network write fails.
+        favorites = if (nowLiked) favorites + t else favorites.filterNot { it.id == t.id }
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -643,6 +646,7 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
                 favorites = library.replaceFavorites(remoteLiked + favorites.filter { it.isLocal })
                 if (nowLiked) prefetchTracks(listOf(t))
             }.onFailure {
+                favorites = library.favorites()
                 message = "Couldn't update YouTube Music likes: ${it.message ?: "network error"}"
             }
         }

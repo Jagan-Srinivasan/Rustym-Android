@@ -151,6 +151,8 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
     var picks by remember { mutableStateOf<List<Track>?>(null) }
     var failed by remember { mutableStateOf(false) }
     var reload by remember { mutableStateOf(0) }
+    var showLiked by remember { mutableStateOf(false) }
+    var trending by remember { mutableStateOf<List<Track>?>(null) }
 
     LaunchedEffect(mood, reload) {
         failed = false
@@ -158,10 +160,15 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
         picks = withContext(Dispatchers.IO) { runCatching { Yt.search(HomeMoods[mood] ?: "top hits this week") }.getOrNull() }
         if (picks == null) failed = true
     }
+    // Trending tile next to Liked songs: fetched once.
+    LaunchedEffect(Unit) {
+        trending = withContext(Dispatchers.IO) { runCatching { Yt.search("Trending hits") }.getOrNull() }
+    }
 
     // The accent already follows the last played song (app-wide artwork tint).
     val tint = Accent
 
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize()) {
         // ---- greeting header, tinted with the last played song
         item {
@@ -183,17 +190,17 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 AccountButton(vm, onLogin)
             }
         }
-        // ---- liked songs + your playlists (two-column tiles, like the reference)
+        // ---- liked songs + trending + your playlists (two-column tiles)
         item {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val playlists = vm.localPlaylists
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HomeLikedTile(vm, Modifier.weight(1f))
-                    val first = playlists.firstOrNull()
-                    if (first == null) Box(Modifier.weight(1f))
-                    else HomePlaylistTile(first.first, first.second, Modifier.weight(1f)) { vm.play(first.second, 0) }
+                    HomeLikedTile(vm, Modifier.weight(1f)) { showLiked = true }
+                    val tr = trending
+                    if (tr.isNullOrEmpty()) Box(Modifier.weight(1f))
+                    else HomePlaylistTile("Trending", tr, Modifier.weight(1f), subtitle = "What's hot now") { vm.play(tr, 0) }
                 }
-                playlists.drop(1).chunked(2).forEach { row ->
+                playlists.drop(0).chunked(2).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         row.forEach { (name, tracks) ->
                             HomePlaylistTile(name, tracks, Modifier.weight(1f)) { vm.play(tracks, 0) }
@@ -283,20 +290,19 @@ fun HomeScreen(vm: PlayerVM, onLogin: () -> Unit) {
         }
         item { Box(Modifier.size(24.dp)) }
     }
+    if (showLiked) LikedSongsOverlay(vm) { showLiked = false }
+    }
 }
 
 
 /** Rounded "Liked songs" tile with the signature gradient heart artwork. */
 @Composable
-private fun HomeLikedTile(vm: PlayerVM, modifier: Modifier = Modifier) {
+private fun HomeLikedTile(vm: PlayerVM, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val liked = vm.favorites
     Surface(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .clickable {
-                if (liked.isNotEmpty()) vm.play(liked, 0)
-                else vm.message = "Tap the heart on any song to like it"
-            },
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         color = Surface2,
     ) {
@@ -320,7 +326,7 @@ private fun HomeLikedTile(vm: PlayerVM, modifier: Modifier = Modifier) {
 
 /** Rounded playlist tile: artwork of the first track + playlist name. */
 @Composable
-private fun HomePlaylistTile(name: String, tracks: List<Track>, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun HomePlaylistTile(name: String, tracks: List<Track>, modifier: Modifier = Modifier, subtitle: String? = null, onClick: () -> Unit) {
     Surface(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
@@ -344,7 +350,34 @@ private fun HomePlaylistTile(name: String, tracks: List<Track>, modifier: Modifi
             }
             Column(Modifier.weight(1f).padding(start = 10.dp)) {
                 Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${tracks.size} songs", color = Dim, style = MaterialTheme.typography.bodySmall)
+                Text(subtitle ?: "${tracks.size} songs", color = Dim, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+/** Full-screen liked-songs playlist, opened from the Home tile. */
+@Composable
+private fun LikedSongsOverlay(vm: PlayerVM, onClose: () -> Unit) {
+    val liked = vm.favorites
+    Box(Modifier.fillMaxSize().background(Bg)) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose) { Icon(Icons.Filled.KeyboardArrowDown, "Close", Modifier.size(30.dp)) }
+                Column(Modifier.weight(1f)) {
+                    Text("Liked songs", style = MaterialTheme.typography.titleLarge)
+                    Text("${liked.size} songs", color = Dim, style = MaterialTheme.typography.bodySmall)
+                }
+                if (liked.isNotEmpty()) TextButton(onClick = { vm.play(liked.shuffled(), 0) }) { Text("Shuffle", color = Accent) }
+            }
+            if (liked.isEmpty()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), Alignment.Center) { Text("Tap the heart on any song to like it", color = Dim) }
+            } else {
+                LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(liked, key = { _, t -> t.id }) { i, t ->
+                        TrackRow(t, vm.current?.id == t.id, vm.isFavorite(t.id), { vm.play(liked, i) }, { vm.toggleFavorite(t) })
+                    }
+                }
             }
         }
     }
@@ -1026,31 +1059,6 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 IconButton(onClick = { showOutput = true }) {
                     Icon(Icons.Filled.Headphones, "Output devices", Modifier.size(26.dp), tint = Accent)
                 }
-                IconButton(onClick = { showMore = true }) {
-                    Icon(Icons.Filled.MoreVert, "More", Modifier.size(26.dp), tint = Accent)
-                    DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Share song") },
-                            leadingIcon = { Icon(Icons.Filled.Share, null, Modifier.size(20.dp)) },
-                            onClick = {
-                                showMore = false
-                                val s = vm.current ?: return@DropdownMenuItem
-                                val text = if (s.isLocal) "${s.title} — ${s.artist}"
-                                    else "${s.title} — ${s.artist}\n${com.rustym.mobile.data.WATCH_URL}${s.id}"
-                                val send = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, text)
-                                }
-                                context.startActivity(Intent.createChooser(send, "Share song"))
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Add to playlist") },
-                            leadingIcon = { Icon(Icons.Filled.PlaylistAdd, null, Modifier.size(20.dp)) },
-                            onClick = { showMore = false; showAddTo = true },
-                        )
-                    }
-                }
             },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
         )
@@ -1062,8 +1070,8 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 }
             }
         } else if (t != null) {
-            Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), 320.dp, corner = 26.dp)
+            Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), 320.dp, corner = 26.dp, modifier = Modifier.padding(bottom = 8.dp))
             }
             var editLyrics by remember(t.id) { mutableStateOf(false) }
             val lyricLines = remember(vm.lyricsText) { vm.syncedLyricLines() }
@@ -1111,6 +1119,31 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                         if (fav) "Remove from favourites" else "Add to favourites",
                         Modifier.size(28.dp), tint = if (fav) Accent else Dim,
                     )
+                }
+                IconButton(onClick = { showMore = true }, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Filled.MoreVert, "More", Modifier.size(24.dp), tint = Dim)
+                    DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Share song") },
+                            leadingIcon = { Icon(Icons.Filled.Share, null, Modifier.size(20.dp)) },
+                            onClick = {
+                                showMore = false
+                                val s = vm.current ?: return@DropdownMenuItem
+                                val text = if (s.isLocal) "${s.title} — ${s.artist}"
+                                    else "${s.title} — ${s.artist}\n${com.rustym.mobile.data.WATCH_URL}${s.id}"
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, text)
+                                }
+                                context.startActivity(Intent.createChooser(send, "Share song"))
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Add to playlist") },
+                            leadingIcon = { Icon(Icons.Filled.PlaylistAdd, null, Modifier.size(20.dp)) },
+                            onClick = { showMore = false; showAddTo = true },
+                        )
+                    }
                 }
             }
             if (editLyrics) {

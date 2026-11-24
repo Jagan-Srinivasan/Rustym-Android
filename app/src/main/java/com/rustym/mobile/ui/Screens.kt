@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.QueueMusic
@@ -1074,6 +1075,109 @@ private fun SoundFxDialog(onDismiss: () -> Unit) {
     )
 }
 
+/** Standalone "Updates" card: check GitHub releases + how-to-update instructions. */
+@Composable
+private fun UpdateCard() {
+    val context = LocalContext.current
+    val versionName = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "1.0.0"
+    }
+    var checking by remember { mutableStateOf(false) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
+    var updateUrl by remember { mutableStateOf<String?>(null) }
+    var showInfo by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    fun isNewer(remote: String, current: String): Boolean {
+        val r = remote.split('.').map { it.filter { ch -> ch.isDigit() }.toIntOrNull() ?: 0 }
+        val c = current.split('.').map { it.toIntOrNull() ?: 0 }
+        for (i in 0 until 3) {
+            val rv = r.getOrNull(i) ?: 0
+            val cv = c.getOrNull(i) ?: 0
+            if (rv != cv) return rv > cv
+        }
+        return false
+    }
+    SettingsCard {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("App updates", style = MaterialTheme.typography.titleMedium)
+                Text("Installed version: $versionName", color = Dim, style = MaterialTheme.typography.bodySmall)
+            }
+            IconButton(onClick = { showInfo = true }) {
+                Icon(Icons.Filled.Info, "How to update", Modifier.size(20.dp), tint = Dim)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = {
+                checking = true
+                updateStatus = null
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val c = java.net.URL("https://api.github.com/repos/Jagan-Srinivasan/Rustym-Android/releases/latest")
+                                .openConnection() as java.net.HttpURLConnection
+                            c.connectTimeout = 8000
+                            c.readTimeout = 8000
+                            c.setRequestProperty("Accept", "application/vnd.github+json")
+                            val code = c.responseCode
+                            if (code == 404) "none" to ""
+                            else if (code !in 200..299) "error" to ""
+                            else {
+                                val body = c.inputStream.bufferedReader().use { it.readText() }
+                                val obj = org.json.JSONObject(body)
+                                obj.optString("tag_name") to obj.optString("html_url")
+                            }
+                        }.getOrElse { "error" to "" }
+                    }
+                    checking = false
+                    when {
+                        result.first == "none" ->
+                            updateStatus = "No new release available."
+                        result.first == "error" ->
+                            updateStatus = "Couldn't check for updates - check your connection."
+                        isNewer(result.first.removePrefix("v").removePrefix("V"), versionName) -> {
+                            updateStatus = "New version ${result.first} is available!"
+                            updateUrl = result.second.ifBlank { "https://github.com/Jagan-Srinivasan/Rustym-Android/releases/latest" }
+                        }
+                        else -> updateStatus = "No new release - you're on the latest version ($versionName)."
+                    }
+                }
+            }) { Text("Check for updates", color = Accent) }
+            if (checking) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Accent)
+            }
+        }
+        updateStatus?.let { st ->
+            Text(st, color = if (st.startsWith("New")) Accent else Dim, style = MaterialTheme.typography.bodySmall)
+            updateUrl?.let { url ->
+                TextButton(onClick = {
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                }) { Text("Open release page", color = Accent) }
+            }
+        }
+    }
+    if (showInfo) {
+        AlertDialog(
+            onDismissRequest = { showInfo = false },
+            title = { Text("How to update Rustym") },
+            text = {
+                Column {
+                    Text("1. Tap "Check for updates" above.")
+                    Spacer(Modifier.height(4.dp))
+                    Text("2. If a new version is found, tap "Open release page" - GitHub opens in your browser.")
+                    Spacer(Modifier.height(4.dp))
+                    Text("3. Download the Rustym.apk attached to that release.")
+                    Spacer(Modifier.height(4.dp))
+                    Text("4. Open the downloaded file and install it. If Android asks, allow "Install unknown apps" for your browser or file manager.")
+                    Spacer(Modifier.height(8.dp))
+                    Text("Updating keeps your favourites, history, settings and caches - nothing is lost.", color = Dim)
+                }
+            },
+            confirmButton = { TextButton(onClick = { showInfo = false }) { Text("Got it", color = Accent) } },
+        )
+    }
+}
+
 // ---------------------------------------------------------------- Settings
 
 /** Material 3 elevated card used for every settings section. */
@@ -1337,69 +1441,6 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Text("Version $versionName · Music, without distractions.", color = Dim, style = MaterialTheme.typography.bodySmall)
                 Text("Developed by Jagan Srinivasan", color = Dim, style = MaterialTheme.typography.bodySmall)
 
-                // ---- in-app update check against GitHub releases
-                var checking by remember { mutableStateOf(false) }
-                var updateStatus by remember { mutableStateOf<String?>(null) }
-                var updateUrl by remember { mutableStateOf<String?>(null) }
-                val scope = rememberCoroutineScope()
-                fun isNewer(remote: String, current: String): Boolean {
-                    val r = remote.split('.').map { it.filter { ch -> ch.isDigit() }.toIntOrNull() ?: 0 }
-                    val c = current.split('.').map { it.toIntOrNull() ?: 0 }
-                    for (i in 0 until 3) {
-                        val rv = r.getOrNull(i) ?: 0
-                        val cv = c.getOrNull(i) ?: 0
-                        if (rv != cv) return rv > cv
-                    }
-                    return false
-                }
-                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = {
-                        checking = true
-                        updateStatus = null
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    val c = java.net.URL("https://api.github.com/repos/Jagan-Srinivasan/Rustym-Android/releases/latest")
-                                        .openConnection() as java.net.HttpURLConnection
-                                    c.connectTimeout = 8000
-                                    c.readTimeout = 8000
-                                    c.setRequestProperty("Accept", "application/vnd.github+json")
-                                    val code = c.responseCode
-                                    if (code == 404) "none" to ""                       // no releases published yet
-                                    else if (code !in 200..299) "error" to ""
-                                    else {
-                                        val body = c.inputStream.bufferedReader().use { it.readText() }
-                                        val obj = org.json.JSONObject(body)
-                                        obj.optString("tag_name") to obj.optString("html_url")
-                                    }
-                                }.getOrElse { "error" to "" }
-                            }
-                            checking = false
-                            when {
-                                result.first == "none" ->
-                                    updateStatus = "No releases published yet."
-                                result.first == "error" ->
-                                    updateStatus = "Couldn't check for updates - check your connection."
-                                isNewer(result.first.removePrefix("v").removePrefix("V"), versionName) -> {
-                                    updateStatus = "New version ${result.first} is available!"
-                                    updateUrl = result.second.ifBlank { "https://github.com/Jagan-Srinivasan/Rustym-Android/releases/latest" }
-                                }
-                                else -> updateStatus = "You're on the latest version ($versionName)."
-                            }
-                        }
-                    }) { Text("Check for updates", color = Accent) }
-                    if (checking) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Accent)
-                    }
-                }
-                updateStatus?.let { st ->
-                    Text(st, color = if (st.startsWith("New")) Accent else Dim, style = MaterialTheme.typography.bodySmall)
-                    updateUrl?.let { url ->
-                        TextButton(onClick = {
-                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                        }) { Text("Open release page", color = Accent) }
-                    }
-                }
                 val repo = "https://github.com/Jagan-Srinivasan/Rustym-Android"
                 Text("github.com/Jagan-Srinivasan/Rustym-Android",
                     color = Accent,
@@ -1415,6 +1456,9 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Text("Google sign-in is used only to fetch your liked songs, playlists and recommendations. Your session is stored encrypted on this device and no personal information leaves the app.", color = Dim, style = MaterialTheme.typography.bodySmall)
             }
         }
+        // ---- Updates ----
+        item { SectionTitle("Updates") }
+        item { UpdateCard() }
         item { Spacer(Modifier.height(16.dp)) }
     }
 

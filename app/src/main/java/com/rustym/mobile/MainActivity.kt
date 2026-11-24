@@ -53,6 +53,7 @@ import com.rustym.mobile.ui.NowPlayingScreen
 import com.rustym.mobile.ui.PlayerVM
 import com.rustym.mobile.ui.RustymTheme
 import com.rustym.mobile.ui.SearchScreen
+import com.rustym.mobile.ui.SignInNoticeDialog
 import com.rustym.mobile.ui.SettingsScreen
 import com.rustym.mobile.ui.Surface2
 import com.rustym.mobile.ui.Dim

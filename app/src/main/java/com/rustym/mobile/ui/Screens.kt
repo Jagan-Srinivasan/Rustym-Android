@@ -640,8 +640,6 @@ private fun outputDeviceLabel(type: Int): String = when (type) {
     else -> "Phone speaker"
 }
 
-/** Lists the audio output devices (speaker, wired, Bluetooth, USB) attached to the phone. */
-@Composable
 /** Shown before the Google flow: explains exactly what sign-in is for. */
 @Composable
 fun SignInNoticeDialog(onProceed: () -> Unit, onDismiss: () -> Unit) {
@@ -665,6 +663,8 @@ fun SignInNoticeDialog(onProceed: () -> Unit, onDismiss: () -> Unit) {
     )
 }
 
+/** Lists the audio output devices (speaker, wired, Bluetooth, USB) attached to the phone. */
+@Composable
 private fun OutputDevicesDialog(vm: PlayerVM, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val am = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }

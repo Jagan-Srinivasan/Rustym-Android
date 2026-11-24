@@ -1162,13 +1162,13 @@ private fun UpdateCard() {
             title = { Text("How to update Rustym") },
             text = {
                 Column {
-                    Text("1. Tap "Check for updates" above.")
+                    Text("1. Tap \"Check for updates\" above.")
                     Spacer(Modifier.height(4.dp))
-                    Text("2. If a new version is found, tap "Open release page" - GitHub opens in your browser.")
+                    Text("2. If a new version is found, tap \"Open release page\" - GitHub opens in your browser.")
                     Spacer(Modifier.height(4.dp))
                     Text("3. Download the Rustym.apk attached to that release.")
                     Spacer(Modifier.height(4.dp))
-                    Text("4. Open the downloaded file and install it. If Android asks, allow "Install unknown apps" for your browser or file manager.")
+                    Text("4. Open the downloaded file and install it. If Android asks, allow \"Install unknown apps\" for your browser or file manager.")
                     Spacer(Modifier.height(8.dp))
                     Text("Updating keeps your favourites, history, settings and caches - nothing is lost.", color = Dim)
                 }

@@ -1413,7 +1413,7 @@ private fun SoundFxDialog(onDismiss: () -> Unit) {
 private fun UpdateCard() {
     val context = LocalContext.current
     val versionName = remember {
-        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "1.0.0"
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "1.0.1"
     }
     var checking by remember { mutableStateOf(false) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
@@ -1769,7 +1769,7 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
             SettingsCard {
                 Text("Rustym for Android", style = MaterialTheme.typography.titleMedium)
                 val versionName = remember {
-                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "1.0.0"
+                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "1.0.1"
                 }
                 Text("Version $versionName · Music, without distractions.", color = Dim, style = MaterialTheme.typography.bodySmall)
                 Text("Developed by Jagan Srinivasan", color = Dim, style = MaterialTheme.typography.bodySmall)

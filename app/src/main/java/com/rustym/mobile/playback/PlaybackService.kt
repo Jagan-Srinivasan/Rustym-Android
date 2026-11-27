@@ -138,6 +138,7 @@ class PlaybackService : MediaSessionService() {
     private var mediaSourceFactory: androidx.media3.exoplayer.source.MediaSource.Factory? = null
     private var crossfadePlayer: ExoPlayer? = null
     @Volatile private var crossfadeActive = false
+    @Volatile private var crossfadeInternalSeek = false
     private val favoritesListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "favorites") refreshLikeButton()
     }
@@ -208,6 +209,15 @@ class PlaybackService : MediaSessionService() {
 
         // A track that cannot be played (removed, region-locked, expired link) must not stop the queue.
         player.addListener(object : Player.Listener {
+            override fun onPositionDiscontinuity(
+                positionInfo: androidx.media3.common.Player.PositionInfo,
+                newPositionInfo: androidx.media3.common.Player.PositionInfo,
+                reason: Int,
+            ) {
+                // A manual seek/skip mid-fade hands control back to the main player.
+                // (The seek inside startCrossfade itself is flagged so it's ignored here.)
+                if (crossfadeActive && !crossfadeInternalSeek) cancelCrossfade(player as? ExoPlayer)
+            }
             override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
                 refreshLikeButton()
                 prefetchNext(player)
@@ -286,6 +296,7 @@ class PlaybackService : MediaSessionService() {
                     // Manual "next" uses the same true crossfade as natural track end.
                     val p = session.player as? ExoPlayer
                     if (p != null && crossfadeSeconds() > 0 && p.hasNextMediaItem()) {
+                        if (crossfadeActive) cancelCrossfade(p)
                         startCrossfade(p)
                     } else {
                         p?.seekToNextMediaItem()
@@ -306,18 +317,6 @@ class PlaybackService : MediaSessionService() {
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
-            }
-
-            override fun onPlayerCommandRequest(
-                session: MediaSession,
-                controller: MediaSession.ControllerInfo,
-                command: Int,
-            ): Int {
-                // A manual seek/skip or pause during a fade hands control back to the main player.
-                if (crossfadeActive && command in SEEK_CANCEL_COMMANDS) {
-                    cancelCrossfade(session.player as? ExoPlayer)
-                }
-                return command // pass the command through unchanged
             }
         }
         val likeButton = CommandButton.Builder(CommandButton.ICON_UNDEFINED)
@@ -356,6 +355,7 @@ class PlaybackService : MediaSessionService() {
             }
             PlayerWidget.ACTION_NEXT -> {
                 if (p != null && p.hasNextMediaItem()) {
+                    if (crossfadeActive) cancelCrossfade(p as? ExoPlayer)
                     p.seekToNextMediaItem()
                     if (!p.isPlaying) p.play()
                     updateWidget(p)
@@ -363,6 +363,7 @@ class PlaybackService : MediaSessionService() {
             }
             PlayerWidget.ACTION_PREV -> {
                 if (p != null) {
+                    if (crossfadeActive) cancelCrossfade(p as? ExoPlayer)
                     p.seekToPreviousMediaItem()
                     if (!p.isPlaying) p.play()
                     updateWidget(p)
@@ -430,7 +431,9 @@ class PlaybackService : MediaSessionService() {
         // The queue moves to the next item at once (UI, lyrics, stats update now);
         // its audio stays silent until the ramp brings it up.
         p.volume = 0f
+        crossfadeInternalSeek = true
         p.seekToNextMediaItem()
+        crossfadeInternalSeek = false
         serviceScope.launch(Dispatchers.Main) {
             val steps = 24
             try {

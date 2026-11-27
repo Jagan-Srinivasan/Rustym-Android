@@ -527,11 +527,17 @@ class PlaybackService : MediaSessionService() {
                 }
                 android.util.Log.d("RustymCrossfade", "blending ${fadeMs}ms (resolved=${waited}ms held=${held}ms)")
                 // Phase 3: equal-power (cos/sin) ramp over the outgoing's real last
-                // fadeMs; the outgoing song pauses at its own end during the ramp.
-                val steps = 24
-                var ramped = 0
-                while (ramped < steps) {
-                    kotlinx.coroutines.delay(fadeMs / steps)
+                // fadeMs. Gain is derived from ACTUAL elapsed time (not step counts)
+                // so the blend length matches the fadeMs setting exactly - otherwise
+                // delay() overshoot makes the shadow play 1-2s beyond the fade,
+                // which the commit would then replay.
+                val rampStart = android.os.SystemClock.elapsedRealtime()
+                var fEnd = 0f
+                while (true) {
+                    val elapsed = android.os.SystemClock.elapsedRealtime() - rampStart
+                    fEnd = (elapsed.toFloat() / fadeMs).coerceIn(0f, 1f)
+                    if (elapsed >= fadeMs) break
+                    kotlinx.coroutines.delay(50)
                     if (crossfadePlayer !== shadow) return@launch
                     // The user skipping past the outgoing song ends this blend.
                     if (p.currentMediaItemIndex != fadeOutIndex) {
@@ -539,9 +545,8 @@ class PlaybackService : MediaSessionService() {
                         cancelled = true
                         return@launch
                     }
-                    ramped++
-                    val f = ramped.toFloat() / steps
-                    val angle = (f * Math.PI / 2.0).toFloat()
+                    // DJ-standard gain curves: the combined loudness stays ~constant.
+                    val angle = (fEnd * Math.PI / 2.0).toFloat()
                     p.volume = kotlin.math.cos(angle)
                     shadow.volume = kotlin.math.sin(angle)
                     // Song reached its end mid-ramp -> commit early, seamlessly.
@@ -552,12 +557,16 @@ class PlaybackService : MediaSessionService() {
                         return@launch
                     }
                 }
+                fEnd = ((android.os.SystemClock.elapsedRealtime() - rampStart).toFloat() / fadeMs).coerceIn(0f, 1f)
                 // Phase 4: commit. The outgoing song has finished - NOW the queue
                 // advances, so artwork/title/lyrics switch exactly when the song ends.
-                // The shadow keeps sounding the incoming meanwhile, so continuity holds.
+                // The shadow is FROZEN at the handover point: it must not keep
+                // playing, or the main player replays that last stretch.
                 val incomingPos = shadow.currentPosition.coerceAtLeast(0L)
+                val incomingGain = kotlin.math.sin((fEnd * Math.PI / 2.0).toFloat()).coerceIn(0f, 1f)
                 fadeOutIndex = -1 // further index change is the commit itself
-                android.util.Log.d("RustymCrossfade", "commit (incoming at ${incomingPos}ms, gain ${(ramped.toFloat() / steps)})")
+                android.util.Log.d("RustymCrossfade", "commit (incoming at ${incomingPos}ms, gain $fEnd)")
+                runCatching { shadow.pause() }
                 p.volume = 0f
                 p.playWhenReady = true
                 p.seekToNextMediaItem()
@@ -567,18 +576,20 @@ class PlaybackService : MediaSessionService() {
                     kotlinx.coroutines.delay(50)
                     t += 50
                 }
-                // Finish the gain curve on the main player while the shadow bows out -
-                // both play the same audio at the same position, so this is seamless.
-                val remainSteps = steps - ramped
-                for (j in 1..remainSteps) {
-                    kotlinx.coroutines.delay(fadeMs / steps)
-                    if (crossfadePlayer !== shadow) break
-                    val f = (ramped + j).toFloat() / steps
-                    val angle = (f * Math.PI / 2.0).toFloat()
-                    p.volume = kotlin.math.sin(angle)
-                    shadow.volume = kotlin.math.cos(angle)
+                // Take over at the exact blend gain and finish the fade-in on the
+                // main player alone.
+                p.volume = incomingGain
+                val remainMs = ((1f - fEnd) * fadeMs).toLong()
+                if (remainMs > 30L) {
+                    val remainSteps = 8
+                    for (j in 1..remainSteps) {
+                        kotlinx.coroutines.delay(remainMs / remainSteps)
+                        if (crossfadePlayer !== shadow) break
+                        val f = fEnd + (1f - fEnd) * j / remainSteps
+                        p.volume = kotlin.math.sin((f * Math.PI / 2.0).toFloat())
+                    }
                 }
-                android.util.Log.d("RustymCrossfade", "done (resolved=${waited}ms held=${held}ms commit=${t}ms)")
+                android.util.Log.d("RustymCrossfade", "done (fEnd=$fEnd commit=${t}ms)")
             } finally {
                 p.volume = 1f
                 p.pauseAtEndOfMediaItems = false

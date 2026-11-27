@@ -535,6 +535,14 @@ class PlaybackService : MediaSessionService() {
                     shadow.volume = kotlin.math.sin(angle)
                     if (blendProgress >= 1f) break
                     kotlinx.coroutines.delay(50)
+                    if (crossfadePlayer !== shadow) return@launch
+                    // Manual skip mid-blend: abort at once (auto-advance is handled
+                    // by the transition listener before this ever sees it).
+                    if (p.currentMediaItemIndex != fadeOutIndex) {
+                        android.util.Log.d("RustymCrossfade", "aborted: queue moved")
+                        cancelled = true
+                        return@launch
+                    }
                     if (!p.playWhenReady && p.currentMediaItemIndex == fadeOutIndex) {
                         android.util.Log.d("RustymCrossfade", "aborted: paused")
                         cancelled = true

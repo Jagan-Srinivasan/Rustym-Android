@@ -333,24 +333,18 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
 
     fun next() {
         val c = controller ?: return
-        if (crossfadeSeconds <= 0 || !c.isPlaying || !c.hasNextMediaItem()) {
-            c.seekToNextMediaItem()
-            return
+        // With crossfade enabled, "next" is a true overlap handled by the service;
+        // the outgoing tail keeps playing while the new track fades in.
+        if (crossfadeSeconds > 0 && c.hasNextMediaItem()) {
+            val sent = runCatching {
+                c.sendCustomCommand(
+                    androidx.media3.session.SessionCommand("com.rustym.mobile.action.CROSSFADE_NEXT", android.os.Bundle.EMPTY),
+                    android.os.Bundle.EMPTY,
+                )
+            }.isSuccess
+            if (sent) return
         }
-        viewModelScope.launch {
-            val original = c.volume
-            val steps = 8
-            repeat(steps) { i ->
-                c.volume = original * (1f - (i + 1f) / steps)
-                delay((crossfadeSeconds * 1000L / (steps * 2)).coerceAtLeast(20L))
-            }
-            c.seekToNextMediaItem()
-            repeat(steps) { i ->
-                c.volume = original * ((i + 1f) / steps)
-                delay((crossfadeSeconds * 1000L / (steps * 2)).coerceAtLeast(20L))
-            }
-            c.volume = original
-        }
+        c.seekToNextMediaItem()
     }
 
     fun updatePlaybackSpeed(speed: Float) {

@@ -124,10 +124,20 @@ class PlaybackService : MediaSessionService() {
     companion object {
     private const val ACTION_TOGGLE_LIKE = "com.rustym.mobile.action.TOGGLE_LIKE"
     private const val ACTION_ROUTE_TO_DEVICE = "com.rustym.mobile.action.ROUTE_TO_DEVICE"
+    private const val ACTION_CROSSFADE_NEXT = "com.rustym.mobile.action.CROSSFADE_NEXT"
 }
     private var session: MediaSession? = null
     private lateinit var library: Library
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // ---- crossfade ----
+    // The session player M jumps to the next item immediately (silent); a shadow
+    // player S carries the outgoing track's tail. Over the fade window M's volume
+    // ramps up while S's ramps down, so the two songs overlap like premium players.
+    private var renderersFactory: androidx.media3.exoplayer.RenderersFactory? = null
+    private var mediaSourceFactory: androidx.media3.exoplayer.source.MediaSource.Factory? = null
+    private var crossfadePlayer: ExoPlayer? = null
+    @Volatile private var crossfadeActive = false
     private val favoritesListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "favorites") refreshLikeButton()
     }
@@ -168,9 +178,9 @@ class PlaybackService : MediaSessionService() {
         val resolvedUpstream = DefaultDataSource.Factory(this, ResolvingDataSource.Factory(http, resolver))
         AudioCache.initialize(this, resolvedUpstream)
         val dataSources = AudioCache.dataSourceFactory()
-
+        mediaSourceFactory = DefaultMediaSourceFactory(dataSources)
         // Standard Media3 audio pipeline with the 8D rotation processor in the sink chain.
-        val renderersFactory = object : DefaultRenderersFactory(this) {
+        renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: android.content.Context,
                 enableFloatOutput: Boolean,
@@ -183,8 +193,8 @@ class PlaybackService : MediaSessionService() {
                     .build()
             }
         }
-        val player = ExoPlayer.Builder(this, renderersFactory)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSources))
+        val player = ExoPlayer.Builder(this, renderersFactory!!)
+            .setMediaSourceFactory(mediaSourceFactory!!)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -223,6 +233,14 @@ class PlaybackService : MediaSessionService() {
         AudioFx.init(this)
         AudioFx.attach(player.audioSessionId)
 
+        // Crossfade ticker: watches for tracks approaching their end every 200ms.
+        serviceScope.launch(Dispatchers.Main) {
+            while (true) {
+                kotlinx.coroutines.delay(200)
+                (session?.player as? ExoPlayer)?.let { maybeCrossfade(it) }
+            }
+        }
+
         val likeCommand = SessionCommand(ACTION_TOGGLE_LIKE, Bundle.EMPTY)
         library = Library(this)
         getSharedPreferences("library", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(favoritesListener)
@@ -233,7 +251,8 @@ class PlaybackService : MediaSessionService() {
             ): MediaSession.ConnectionResult {
                 val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
                     .buildUpon().add(likeCommand)
-                    .add(SessionCommand(ACTION_ROUTE_TO_DEVICE, Bundle.EMPTY)).build()
+                    .add(SessionCommand(ACTION_ROUTE_TO_DEVICE, Bundle.EMPTY))
+                    .add(SessionCommand(ACTION_CROSSFADE_NEXT, Bundle.EMPTY)).build()
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(commands)
                     .build()
@@ -263,6 +282,16 @@ class PlaybackService : MediaSessionService() {
                     }
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
+                if (customCommand.customAction == ACTION_CROSSFADE_NEXT) {
+                    // Manual "next" uses the same true crossfade as natural track end.
+                    val p = session.player as? ExoPlayer
+                    if (p != null && crossfadeSeconds() > 0 && p.hasNextMediaItem()) {
+                        startCrossfade(p)
+                    } else {
+                        p?.seekToNextMediaItem()
+                    }
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
                 if (customCommand.customAction == ACTION_ROUTE_TO_DEVICE) {
                     // The audio sink lives on ExoPlayer, so routing requests come through the session.
                     val id = args.getInt("id", -1)
@@ -277,6 +306,18 @@ class PlaybackService : MediaSessionService() {
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+            }
+
+            override fun onPlayerCommandRequest(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+                command: Int,
+            ): ListenableFuture<SessionResult> {
+                // A manual seek/skip or pause during a fade hands control back to the main player.
+                if (crossfadeActive && command in SEEK_CANCEL_COMMANDS) {
+                    cancelCrossfade(session.player as? ExoPlayer)
+                }
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
         }
         val likeButton = CommandButton.Builder(CommandButton.ICON_UNDEFINED)
@@ -332,6 +373,94 @@ class PlaybackService : MediaSessionService() {
         return super.onStartCommand(intent, flags, startId)
     }
 
+    private val SEEK_CANCEL_COMMANDS = setOf(
+        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+        Player.COMMAND_SEEK_TO_NEXT,
+        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+        Player.COMMAND_SEEK_TO_PREVIOUS,
+        Player.COMMAND_SEEK_TO_DEFAULT_POSITION,
+        Player.COMMAND_SEEK_BACK,
+        Player.COMMAND_SEEK_FORWARD,
+        Player.COMMAND_SEEK_TO,
+        Player.COMMAND_PLAY_PAUSE,
+    )
+
+    private fun crossfadeSeconds(): Int =
+        getSharedPreferences("rustym_settings", MODE_PRIVATE).getInt("crossfade_seconds", 0)
+
+    /** Start a crossfade when the current track is within the fade window of its end. */
+    private fun maybeCrossfade(p: ExoPlayer) {
+        val secs = crossfadeSeconds()
+        if (secs <= 0) {
+            if (crossfadeActive) cancelCrossfade(p)
+            return
+        }
+        if (crossfadeActive || !p.hasNextMediaItem() || !p.isPlaying) return
+        val dur = p.duration
+        if (dur == C.TIME_UNSET || dur <= 0) return
+        val remaining = dur - p.currentPosition
+        if (remaining in 1..(secs * 1000L)) startCrossfade(p)
+    }
+
+    /** Overlap the outgoing track's tail (shadow player) with the incoming track (main player). */
+    private fun startCrossfade(p: ExoPlayer) {
+        if (crossfadeActive || !p.hasNextMediaItem()) return
+        val outgoing = p.currentMediaItem ?: return
+        val startPos = p.currentPosition
+        val ms = (crossfadeSeconds() * 1000L).coerceIn(500L, 10_000L)
+        crossfadeActive = true
+        val shadow = ExoPlayer.Builder(this, renderersFactory!!)
+            .setMediaSourceFactory(mediaSourceFactory!!)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .setUsage(C.USAGE_MEDIA)
+                    .build(),
+                /* handleAudioFocus = */ false, // never let the tail steal focus from the live player
+            )
+            .setHandleAudioBecomingNoisy(false)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .build()
+        crossfadePlayer = shadow
+        shadow.setMediaItem(outgoing)
+        shadow.seekTo(startPos)
+        shadow.volume = 1f
+        shadow.prepare()
+        shadow.playWhenReady = true
+        // The queue moves to the next item at once (UI, lyrics, stats update now);
+        // its audio stays silent until the ramp brings it up.
+        p.volume = 0f
+        p.seekToNextMediaItem()
+        serviceScope.launch(Dispatchers.Main) {
+            val steps = 24
+            try {
+                for (i in 1..steps) {
+                    kotlinx.coroutines.delay(ms / steps)
+                    if (crossfadePlayer !== shadow) return@launch
+                    val f = i.toFloat() / steps
+                    p.volume = f
+                    shadow.volume = 1f - f
+                    if (!p.isPlaying) return@launch // user paused mid-fade
+                }
+            } finally {
+                p.volume = 1f
+                shadow.stop()
+                shadow.release()
+                if (crossfadePlayer === shadow) crossfadePlayer = null
+                crossfadeActive = false
+            }
+        }
+    }
+
+    /** Hand control back to the main player and drop the fading tail. */
+    private fun cancelCrossfade(p: ExoPlayer?) {
+        val shadow = crossfadePlayer
+        crossfadePlayer = null
+        crossfadeActive = false
+        if (shadow != null) runCatching { shadow.stop(); shadow.release() }
+        p?.volume = 1f
+    }
+
     private fun prefetchNext(player: Player) {
         val start = player.currentMediaItemIndex.coerceAtLeast(0) + 1
         val tracks = (start until minOf(player.mediaItemCount, start + 7)).mapNotNull {
@@ -349,6 +478,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         AudioFx.release()
+        cancelCrossfade(session?.player as? ExoPlayer)
         serviceScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         getSharedPreferences("library", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(favoritesListener)
         session?.run {

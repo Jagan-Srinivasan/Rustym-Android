@@ -64,29 +64,36 @@ object AutoUpdater {
             }
 
             status = "Downloading Rustym ${latest.tag.removePrefix("v")}…"
-            val apk = downloadApk(latest.apkUrl) { pct ->
+            val apk = File(context.cacheDir, "rustym-update.apk")
+            apk.delete() // clear any leftover from a previous attempt
+            val ok = downloadApk(latest.apkUrl, apk) { pct ->
                 if (pct != null) status = "Downloading… $pct%"
-            } ?: return "Download failed - check your connection.".also { status = it }
+            }
+            if (!ok) return "Download failed - check your connection.".also { status = it }
 
             status = "Ready to install - confirm in the dialog…"
-            stageInstall(context, apk)
-            return "Rustym ${latest.tag.removePrefix("v")} is ready - tap Install in the dialog."
+            try {
+                stageInstall(context, apk)
+                "Rustym ${latest.tag.removePrefix("v")} is ready - tap Install in the dialog."
+            } catch (e: Exception) {
+                apk.delete()
+                ("Couldn't stage the install - ${e.message ?: "unknown error"}").also { status = it }
+            }
         } finally {
             busy = false
         }
     }
 
-    /** Streams the release APK into the app cache, reporting percent progress. */
-    private suspend fun downloadApk(url: String, onProgress: (Int?) -> Unit): File? =
+    /** Streams the release APK to [out], reporting percent progress. */
+    private suspend fun downloadApk(url: String, out: File, onProgress: (Int?) -> Unit): Boolean =
         withContext(Dispatchers.IO) {
             runCatching {
                 val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
                     connectTimeout = 10000
                     readTimeout = 30000
                 }
-                if (c.responseCode !in 200..299) return@runCatching null
+                if (c.responseCode !in 200..299) return@runCatching false
                 val total = c.contentLengthLong.takeIf { it > 0 }
-                val out = File(java.io.File.createTempFile("rustym-update", ".apk").parentFile, "rustym-update.apk")
                 c.inputStream.use { input ->
                     out.outputStream().use { output ->
                         if (total == null) input.copyTo(output)
@@ -107,8 +114,8 @@ object AutoUpdater {
                 }
                 c.disconnect()
                 onProgress(null)
-                out
-            }.getOrNull()
+                true
+            }.getOrDefault(false)
         }
 
     /**
@@ -134,6 +141,10 @@ object AutoUpdater {
             (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
         session.commit(PendingIntent.getBroadcast(appContext, sessionId, statusIntent, flags).intentSender)
         session.close()
+        // The bytes already live inside the install session - the temp file is
+        // dead weight from here on, whatever the user decides in the dialog.
+        apk.delete()
+        runCatching { File(context.cacheDir, "rustym-update.apk").delete() }
 
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {

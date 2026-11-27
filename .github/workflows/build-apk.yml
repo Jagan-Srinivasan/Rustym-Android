@@ -46,13 +46,18 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build release APK
-        run: set -o pipefail; gradle :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+        run: |
+          set -o pipefail
+          gradle :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
 
       # Surface Kotlin compile errors as check annotations so they're readable
       # through the public checks API (the raw log needs login).
       - name: Surface compile errors
         if: failure()
-        run: grep -E "^e: |^Caused by:" build.log | head -12 | while IFS= read -r line; do echo "::error::$line"; done
+        run: |
+          grep -E "^e: |^Caused by:" build.log | head -12 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
         continue-on-error: true
 
       - name: Rename APK

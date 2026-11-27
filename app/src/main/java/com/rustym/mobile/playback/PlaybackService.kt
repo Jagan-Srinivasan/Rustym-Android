@@ -424,6 +424,18 @@ class PlaybackService : MediaSessionService() {
         session?.player?.let { p -> runCatching { p.seekTo(p.currentPosition) } }
     }
 
+    /**
+     * YouTube stream containers often run a few seconds longer than the song's
+     * real (audible) length. The track metadata carries the audible duration -
+     * anchor the fade window on it so the blend covers the song's real ending.
+     */
+    private fun audibleEndMs(p: ExoPlayer, containerMs: Long): Long {
+        val sec = runCatching {
+            p.currentMediaItem?.localConfiguration?.extras?.getLong("dur") ?: 0L
+        }.getOrDefault(0L)
+        return if (sec > 0) minOf(sec * 1000L, containerMs) else containerMs
+    }
+
     private fun maybeCrossfade(p: ExoPlayer) {
         val secs = crossfadeSeconds()
         if (secs <= 0) {
@@ -438,7 +450,7 @@ class PlaybackService : MediaSessionService() {
         if (!p.hasNextMediaItem() || !p.isPlaying) return
         val dur = p.duration
         if (dur == C.TIME_UNSET || dur <= 0) return
-        val remaining = dur - p.currentPosition
+        val remaining = audibleEndMs(p, dur) - p.currentPosition
         // Trigger with headroom: the incoming stream has to resolve + buffer while
         // the outgoing song keeps playing, and the blend is anchored to the
         // outgoing song's real last fadeMs, so starting early never cuts it.
@@ -460,7 +472,8 @@ class PlaybackService : MediaSessionService() {
         val incoming = p.getMediaItemAt(p.currentMediaItemIndex + 1)
         val dur = p.duration
         if (dur == C.TIME_UNSET || dur <= 0) return
-        val remaining = (dur - p.currentPosition).coerceAtLeast(0L)
+        val audibleEnd = audibleEndMs(p, dur)
+        val remaining = (audibleEnd - p.currentPosition).coerceAtLeast(0L)
         val ms = (crossfadeSeconds() * 1000L).coerceIn(500L, 10_000L)
         // Never fade longer than the track has left - a dry tail mid-fade is worse
         // than a shorter blend.
@@ -511,7 +524,7 @@ class PlaybackService : MediaSessionService() {
                 // anchored on the outgoing's own clock.
                 var held = 0L
                 while (crossfadePlayer === shadow && p.currentMediaItemIndex == fadeOutIndex) {
-                    if (dur - p.currentPosition <= fadeMs + 40L) break
+                    if (audibleEnd - p.currentPosition <= fadeMs + 40L) break
                     kotlinx.coroutines.delay(60)
                     held += 60
                     if (held > 8000L) break

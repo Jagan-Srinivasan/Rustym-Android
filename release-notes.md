@@ -1,17 +1,20 @@
-# Rustym v1.1.8 🎵
+# Rustym v1.1.9 🎵
 
-**The next song now starts from its true beginning after the blend.**
+**Crossfade rebuilt from the ground up and verified on-device through dozens of transitions** — this is the release where crossfade finally behaves like a premium player.
 
 ---
 
-## 🔧 Fixed
-- **The song's opening seconds could be skipped.** During the anchor wait the next song sat *playing silently* on the shadow player, so its clock consumed the first ~1–2s of audio that you never heard — and the handover continued past them. The shadow player now stays **paused** during the wait and starts from its own 0:00 exactly when the blend begins, so:
-  - the fade-in covers the song's real opening
-  - the handover continues at ~the fade length into the song
-- Verified in logs: ramp now runs exactly the set fade length (elapsed-time gain curve, `fEnd=1.0`), handover continues at the blend position with no repeat and no skip
+## 🎛️ Crossfade engine v6
+- **Artwork/title stay on the previous song until it truly ends** — the next song waits ready on a shadow player and only takes over when the previous song has finished
+- **Natural handover**: the previous song ends on its own (no forced queue jumps, no pausing at the last second) and the next song continues **exactly where the blend left it**
+- **No repetition**: the handover skips the small stretch the audio pipeline (Bluetooth) still holds in flight — the previous tail fills that window, so playback is continuous with no replay and no gap
+- **Real fade length**: the blend window is anchored on each song's audible duration (YouTube containers run longer than the music), and the gain curve runs on actual elapsed time — an exact N-second equal-power blend
+- **Padding-safe**: songs whose container runs longer than the music still hand over cleanly (the blend degrades gracefully instead of glitching)
 
-## ♻️ Kept
-- Artwork/title switch only when the previous song truly ends · equal-power DJ blending · manual skips instant · "Crossfading…" indicator · no trimming of the previous song's audio
+## 🔧 Also
+- **Manual skips stay instant** — swiping/tapping next never crossfades
+- **Pause during a blend** cancels it cleanly and keeps the current song
+- "Crossfading…" indicator under the seek slider (Now Playing) while a blend is live
 
 ---
 
@@ -20,4 +23,4 @@ Download **Rustym.apk** below, or let **Auto-update & install** do it.
 
 ---
 
-**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.1.7...v1.1.8
+**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.1.8...v1.1.9

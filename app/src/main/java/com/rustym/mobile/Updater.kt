@@ -11,7 +11,7 @@ import org.json.JSONArray
 object Updater {
     private const val API = "https://api.github.com/repos/Jagan-Srinivasan/Rustym-Android/releases"
 
-    data class Release(val tag: String, val url: String, val notes: String)
+    data class Release(val tag: String, val url: String, val notes: String, val apkUrl: String = "")
 
     /** The newest releases, newest first. Empty list on any network/parse failure. */
     suspend fun releases(count: Int = 8): List<Release> = withContext(Dispatchers.IO) {
@@ -26,7 +26,17 @@ object Updater {
             val arr = JSONArray(body)
             (0 until arr.length()).map { i ->
                 val r = arr.getJSONObject(i)
-                Release(r.optString("tag_name"), r.optString("html_url"), r.optString("body"))
+                val assets = r.optJSONArray("assets")
+                var apk = ""
+                if (assets != null) {
+                    for (a in 0 until assets.length()) {
+                        val asset = assets.getJSONObject(a)
+                        if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
+                            apk = asset.optString("browser_download_url"); break
+                        }
+                    }
+                }
+                Release(r.optString("tag_name"), r.optString("html_url"), r.optString("body"), apk)
             }
         }.getOrDefault(emptyList())
     }

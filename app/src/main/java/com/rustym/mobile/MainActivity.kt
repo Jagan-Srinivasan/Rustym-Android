@@ -68,6 +68,7 @@ import com.rustym.mobile.ui.Surface2
 import com.rustym.mobile.ui.Dim
 import com.rustym.mobile.ui.UpdateAvailableDialog
 import com.rustym.mobile.ui.WhatsNewDialog
+import com.rustym.mobile.AutoUpdater
 import com.rustym.mobile.Updater
 
 class MainActivity : ComponentActivity() {
@@ -120,6 +121,7 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
         val verName = info.versionName.orEmpty()
         val prefs = context.getSharedPreferences("rustym_settings", android.content.Context.MODE_PRIVATE)
         val seen = prefs.getInt("whatsnew_seen_vc", -1)
+        AutoUpdater.init(context)
         val releases = Updater.releases()
         if (seen < 0) {
             // First run of the update-check feature itself. Distinguish a genuine
@@ -134,7 +136,11 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
             prefs.edit().putInt("whatsnew_seen_vc", verCode).apply()
         }
         releases.firstOrNull()?.let { latest ->
-            if (Updater.isNewer(latest.tag, verName)) updateRelease = latest
+            if (Updater.isNewer(latest.tag, verName)) {
+                updateRelease = latest
+                // Auto-update mode: fetch and stage the install quietly in the background.
+                if (AutoUpdater.enabled && !AutoUpdater.busy) AutoUpdater.run(context)
+            }
         }
     }
 

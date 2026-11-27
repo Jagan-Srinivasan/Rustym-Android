@@ -138,6 +138,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import com.rustym.mobile.AutoUpdater
 import com.rustym.mobile.Updater
 import com.rustym.mobile.data.Track
 import com.rustym.mobile.playback.AudioCache
@@ -1106,7 +1107,8 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 val artSize = minOf(maxWidth, maxHeight) - 36.dp
                 var volumePct by remember { mutableStateOf<Int?>(null) }
                 LaunchedEffect(volumePct) {
-                    if (volumePct != null) { delay(1600); volumePct = null }
+                    // The zero-volume pill stays until the user swipes back up.
+                    if (volumePct != null && volumePct != 0) { delay(1600); volumePct = null }
                 }
                 Box(
                     Modifier
@@ -1154,7 +1156,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                                         },
                                         null, Modifier.size(18.dp), tint = Color.White,
                                     )
-                                    Text("Volume $pct%", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                                    Text(if (pct == 0) "Volume is 0 · swipe up to increase" else "Volume $pct%", color = Color.White, style = MaterialTheme.typography.labelLarge)
                                 }
                             }
                         }
@@ -1636,6 +1638,28 @@ private fun UpdateCard() {
             }) { Text("Check for updates", color = Accent) }
             if (checking) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Accent)
+            }
+        }
+        Divider(color = Surface2, thickness = 1.dp)
+        // Hands-free updates: flip this on and Rustym checks, downloads and stages
+        // every future update in the background (one system "Install" tap to confirm).
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Auto-update & install", style = MaterialTheme.typography.titleSmall)
+                Text("Download and install updates automatically in the background", color = Dim, style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(
+                checked = AutoUpdater.enabled,
+                onCheckedChange = { on ->
+                    AutoUpdater.setEnabled(context, on)
+                    if (on && !AutoUpdater.busy) scope.launch { AutoUpdater.run(context) }
+                },
+            )
+        }
+        AutoUpdater.status?.let { st ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (AutoUpdater.busy) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Accent)
+                Text(st, color = Dim, style = MaterialTheme.typography.bodySmall)
             }
         }
         updateStatus?.let { st ->

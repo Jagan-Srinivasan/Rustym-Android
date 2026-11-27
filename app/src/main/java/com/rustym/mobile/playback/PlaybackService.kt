@@ -617,7 +617,7 @@ class PlaybackService : MediaSessionService() {
             p.seekToNextMediaItem()
         }
         val pos = shadow.currentPosition.coerceAtLeast(0L)
-        android.util.Log.d("RustymCrossfade", "takeover at ${pos}ms gain $f")
+        android.util.Log.d("RustymCrossfade", "takeover at ${pos}ms gain $f (forced=$forced)")
         p.volume = 0f
         if (pos > 100L) {
             // Re-point the main player at the blend position. Re-preparing can
@@ -641,7 +641,15 @@ class PlaybackService : MediaSessionService() {
                     // Fresh capture just before the main sounds: the shadow advanced
                     // during the re-prepare, and that stretch must not be replayed.
                     val s2 = shadow.currentPosition.coerceAtLeast(0L)
-                    if (kotlin.math.abs(s2 - pos) > 300L) runCatching { p.seekTo(s2) }
+                    android.util.Log.d("RustymCrossfade", "takeover: main ready after ${t}ms, shadow drifted to ${s2}ms")
+                    if (kotlin.math.abs(s2 - pos) > 300L) {
+                        android.util.Log.d("RustymCrossfade", "takeover: re-capturing at ${s2}ms")
+                        runCatching { p.seekTo(s2) }
+                    }
+                }
+                serviceScope.launch(Dispatchers.Main) {
+                    kotlinx.coroutines.delay(400)
+                    android.util.Log.d("RustymCrossfade", "takeover: main sounding at ${p.currentPosition}ms idx=${p.currentMediaItemIndex} state=${p.playbackState}")
                 }
                 if (!p.playWhenReady) p.playWhenReady = true
                 p.volume = g

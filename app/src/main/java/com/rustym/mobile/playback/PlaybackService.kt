@@ -646,9 +646,11 @@ class PlaybackService : MediaSessionService() {
                     val s2 = shadow.currentPosition.coerceAtLeast(0L)
                     val am = getSystemService(android.media.AudioManager::class.java)
                     val btOut = am?.isBluetoothA2dpOn == true || am?.isBluetoothScoOn == true
-                    // Small extra margin so even the last tail of the pipeline
-                    // never replays.
-                    val guard = (if (btOut) 900L else 250L) + 102L
+                    // The output pipeline (Bluetooth especially - TWS earbuds can
+                    // hold 1-2.5s of audio in flight) keeps the shadow's tail
+                    // sounding after its clock position. Resume that far ahead so
+                    // the tail fills the skip window and nothing ever replays.
+                    val guard = if (btOut) 2000L else 250L
                     val resumeAt = s2 + guard
                     android.util.Log.d("RustymCrossfade", "takeover: main ready after ${t}ms, shadow at ${s2}ms, bt=$btOut, resuming at ${resumeAt}ms")
                     if (kotlin.math.abs(resumeAt - pos) > 100L) runCatching { p.seekTo(resumeAt) }

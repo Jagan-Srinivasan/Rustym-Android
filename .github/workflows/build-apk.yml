@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - crossfade-test
     tags:
       - 'v*'
   workflow_dispatch:

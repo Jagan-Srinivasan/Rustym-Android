@@ -443,8 +443,18 @@ class PlaybackService : MediaSessionService() {
             return
         }
         if (crossfadeActive) {
-            // A manual skip during a blend kills it and hands control back.
-            if (fadeOutIndex != -1 && p.currentMediaItemIndex != fadeOutIndex) cancelCrossfade(p)
+            val idx = p.currentMediaItemIndex
+            if (fadeOutIndex != -1 && idx != fadeOutIndex) {
+                if (idx == fadeOutIndex + 1) {
+                    // Natural end-of-song advance - take over (this poller may see
+                    // the index change before the transition listener dispatches;
+                    // treating it as a skip would restart the song from 0:00).
+                    maybeTakeover(p)
+                } else {
+                    // A genuine manual skip: kill the blend, hand control back.
+                    cancelCrossfade(p)
+                }
+            }
             return
         }
         if (!p.hasNextMediaItem() || !p.isPlaying) return
@@ -535,6 +545,12 @@ class PlaybackService : MediaSessionService() {
                     }
                 }
                 if (crossfadePlayer !== shadow) return@launch
+                // The outgoing may have ended during the wait (its real audio can
+                // run out before the container window) - take over, don't blend.
+                if (p.currentMediaItemIndex == fadeOutIndex + 1) {
+                    maybeTakeover(p)
+                    return@launch
+                }
                 // Phase 3: blend. The outgoing ends naturally during it and the
                 // transition listener takes over; this loop just runs the gains.
                 shadow.playWhenReady = true
@@ -549,11 +565,16 @@ class PlaybackService : MediaSessionService() {
                     if (blendProgress >= 1f) break
                     kotlinx.coroutines.delay(50)
                     if (crossfadePlayer !== shadow) return@launch
-                    // Manual skip mid-blend: abort at once (auto-advance is handled
-                    // by the transition listener before this ever sees it).
+                    // Manual skip mid-blend: abort at once. But the natural
+                    // end-of-song advance (index +1) is a takeover, not a skip -
+                    // cancelling here would restart the next song from 0:00.
                     if (p.currentMediaItemIndex != fadeOutIndex) {
-                        android.util.Log.d("RustymCrossfade", "aborted: queue moved")
-                        cancelled = true
+                        if (p.currentMediaItemIndex == fadeOutIndex + 1) {
+                            maybeTakeover(p)
+                        } else {
+                            android.util.Log.d("RustymCrossfade", "aborted: queue moved")
+                            cancelled = true
+                        }
                         return@launch
                     }
                     if (!p.playWhenReady && p.currentMediaItemIndex == fadeOutIndex) {

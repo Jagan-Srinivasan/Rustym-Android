@@ -361,19 +361,9 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
     }
 
     fun next() {
-        val c = controller ?: return
-        // With crossfade enabled, "next" is a true overlap handled by the service;
-        // the outgoing tail keeps playing while the new track fades in.
-        if (crossfadeSeconds > 0 && c.hasNextMediaItem()) {
-            val sent = runCatching {
-                c.sendCustomCommand(
-                    androidx.media3.session.SessionCommand("com.rustym.mobile.action.CROSSFADE_NEXT", android.os.Bundle.EMPTY),
-                    android.os.Bundle.EMPTY,
-                )
-            }.isSuccess
-            if (sent) return
-        }
-        c.seekToNextMediaItem()
+        // Manual skips are instant jumps - crossfade only happens on natural
+        // transitions, when the song runs into its own fade window.
+        controller?.seekToNextMediaItem()
     }
 
     fun updatePlaybackSpeed(speed: Float) {

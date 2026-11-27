@@ -1,22 +1,25 @@
-# Rustym v1.1.3 🎵
+# Rustym v1.1.4 🎵
 
-**Premium-grade crossfade** — rebuilt following how reference players (SimpMusic's dual-player engine, DJ-standard blending) implement it.
+**Crossfade engine v3** — the blend is now anchored to the outgoing song's real last seconds, and manual skips no longer crossfade.
 
 ---
 
-## 🔧 Upgraded crossfade engine
-- **Equal-power cosine/sine gain curves** replace the linear ramp — the DJ-standard blend where the combined loudness stays constant through the transition instead of dipping in the middle
-- **The tail skips its own silence.** YouTube streams often carry 1–2s of silent padding after the last audible sample — that padding *was* the silence you heard inside the blend. The fading-out tail now fast-forwards through any silence ≥0.5s, so the blend contains real audio from both songs
-- **Earlier handover with headroom** — the queue jump starts 1.2s before the fade window so the incoming stream's resolve/buffer happens under the outgoing song's audio, not in a hole
-- The incoming song always starts at its own 0:00 — never mid-track
+## 🔧 Crossfade rework
+- **Manual next = instant skip.** Swiping or tapping next jumps straight to the song — crossfade only happens when a song naturally runs into its fade window
+- **No more dead air in the blend.** The transition now works in 3 phases:
+  1. The queue moves while the outgoing song keeps playing at full volume, and the next stream resolves/buffers under it
+  2. The incoming song is held silent until the outgoing song's **real last fade window** is reached (the tail's own clock is used, and its silent padding is fast-forwarded, so the blend never sits in a hole)
+  3. Equal-power (cos/sin) blend over exactly the last N seconds of the outgoing song
+- The trigger fires earlier with headroom, so buffering never eats the blend
+- The incoming song always starts at its own 0:00
 
-## ✨ New
-- **"Crossfading…" live indicator** under the seek slider on the Now Playing screen while a blend is running (polled from the playback service, ~3x/second)
+## ✨ Indicator
+- **"Crossfading…" appears the moment the handover starts — during the previous song**, i.e. you see it while the old song is still playing (it stays through the blend)
 
 ---
 
 ## ✨ Still here
-- 🎚️ Crossfade switch + slider (4s default) · 🤫 Skip Silence on by default · 👆 swipe gestures · 🤖 auto-update & install · 🔄 startup update check
+- 🎚️ Crossfade switch + slider (4s default) · 🤫 Skip Silence · 👆 swipe gestures · 🤖 auto-update & install · 🔄 startup update check
 
 ---
 
@@ -25,4 +28,4 @@ Download **Rustym.apk** below, or let **Auto-update & install** do it.
 
 ---
 
-**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.1.2...v1.1.3
+**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.1.3...v1.1.4

@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - master
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -56,3 +58,15 @@ jobs:
           path: Rustym.apk
           if-no-files-found: error
           retention-days: 14
+
+      # Tag pushes (v*) publish the APK as a GitHub release, with the notes from
+      # release-notes.md in the repo. GITHUB_TOKEN is scoped to contents:write above.
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" Rustym.apk \
+            --title "Rustym ${GITHUB_REF_NAME#v}" \
+            --notes-file release-notes.md \
+            --latest

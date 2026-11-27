@@ -1,39 +1,27 @@
-# Rustym v1.0.9 🎵
+# Rustym v1.1.0 🎵
 
-**Crossfade, front and centre — plus Skip Silence.**
+**Crossfade you can actually hear.** The fade engine had a bug that cut every fade the moment it started — this release fixes it, gives crossfade a proper on/off switch, and turns Skip Silence on by default.
 
 ---
+
+## 🔧 Fixed — why you couldn't hear the crossfade
+- The fade was **aborting instantly on every transition**: the fade loop watched `isPlaying`, which goes false for a split second while the incoming track buffers — so the blend collapsed before it was audible
+- The fade now watches the real "user paused" signal (`playWhenReady`) and rides through buffering, so songs genuinely overlap for the full fade length
 
 ## ✨ What's new
-
-### 🎚️ Crossfade (renamed and impossible to miss)
-- The crossfade setting used to be buried as "Skip fade" — it's now **Settings → Playback → Crossfade**, right at the top of the card, with a plain-English subtitle
-- Drag it to 2–6 seconds and songs **blend into each other** — on skips *and* natural ends
-- Fade-window fix: the blend can no longer run longer than the outgoing track has left (no dry patch at the seam)
-
-### 🤫 Skip silence
-- New **Settings → Playback → Skip silence** switch
-- Skips quiet intros, long outros and silent gaps — powered by Media3's silence-skipping audio processor, applied instantly without restarting playback
-- Off by default; flip it once and it's remembered
+- **Crossfade is now a switch + slider** (Settings → Playback): flip it on, then pick the fade length 1–8s. Turning the switch off brings back hard cuts instantly
+- **Skip Silence is ON by default** for new installs — quiet intros, long outros and gaps are skipped without touching a setting (existing users keep their choice)
 
 ---
 
-## 🔧 From 1.0.8 (already included)
-- Playback-commands fix (play/queue/skip reliability)
-- True crossfade engine with clean handover on seek/skip/pause
-
----
-
-## ✨ Still new in 1.0.x
-- 👆 Swipe the Now Playing card left / right to change songs
-- 🎚️ Swipe up / down on the album art for volume (blinks at 0 until raised)
-- 🤖 Auto-update & install · 🎓 one-time tutorial · 📝 lyrics switch · 🔄 startup update check
+## ✨ Still here from 1.0.x
+- 🎚️ True crossfade on skips and natural ends · 👆 swipe card to change songs · 🎚️ volume swipe (blinks at 0) · 🤖 auto-update & install · 🎓 one-time tutorial · 📝 lyrics switch · 🔄 startup update check
 
 ---
 
 ## 📲 Install
-Download **Rustym.apk** below, or let **Auto-update & install** do it.
+Download **Rustym.apk** below, or let **Auto-update & install** do it. Then: **Settings → Playback → Crossfade → on, 4s** — and play a playlist.
 
 ---
 
-**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.0.8...v1.0.9
+**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.0.9...v1.1.0

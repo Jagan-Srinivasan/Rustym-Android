@@ -1865,9 +1865,20 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Text("Playback speed", style = MaterialTheme.typography.titleMedium)
                 val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
                 SettingsChips(speeds.map { "${it}x" }, speeds.indexOfFirst { it == vm.playbackSpeed }.coerceAtLeast(0)) { i -> vm.updatePlaybackSpeed(speeds[i]) }
-                Text("Crossfade: ${if (vm.crossfadeSeconds == 0) "Off" else "${vm.crossfadeSeconds}s"}", style = MaterialTheme.typography.titleMedium)
-                Text("Blend the end of each song into the next one - works on skips and natural ends", color = Dim, style = MaterialTheme.typography.bodySmall)
-                Slider(value = vm.crossfadeSeconds.toFloat(), onValueChange = { vm.setCrossfade(it.toInt()) }, valueRange = 0f..8f)
+                SettingsSwitchRow(
+                    "Crossfade",
+                    "Blend the end of each song into the next one - on skips and natural ends",
+                    vm.crossfadeEnabled,
+                    vm::updateCrossfadeEnabled,
+                )
+                Text("Fade length: ${vm.crossfadeValue}s", style = MaterialTheme.typography.bodySmall, color = Dim)
+                Slider(
+                    value = vm.crossfadeValue.toFloat(),
+                    onValueChange = { vm.setCrossfadeValue(it.toInt()) },
+                    valueRange = 1f..8f,
+                    steps = 6,
+                    enabled = vm.crossfadeEnabled,
+                )
                 Text("Sleep timer", style = MaterialTheme.typography.titleMedium)
                 val sleep = listOf(0, 15, 30, 45, 60)
                 SettingsChips(sleep.map { if (it == 0) "Off" else "${it}m" }, sleep.indexOf(vm.sleepTimerMinutes).coerceAtLeast(0)) { i -> vm.setSleepTimer(sleep[i]) }

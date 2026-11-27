@@ -89,6 +89,29 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
     private val lyricsPrefs = app.getSharedPreferences("rustym_lyrics", android.content.Context.MODE_PRIVATE)
     private val statsPrefs = app.getSharedPreferences("rustym_stats", android.content.Context.MODE_PRIVATE)
 
+    // ---- crossfade UI state: an on/off switch plus a fade-length slider ----
+    var crossfadeEnabled by mutableStateOf(
+        settings.getBoolean("crossfade_enabled", settings.getInt("crossfade_seconds", 0) > 0)
+    ); private set
+    var crossfadeValue by mutableIntStateOf(
+        settings.getInt("crossfade_value", maxOf(settings.getInt("crossfade_seconds", 0), 4))
+    ); private set
+
+    private fun applyCrossfade() {
+        crossfadeSeconds = if (crossfadeEnabled) crossfadeValue.coerceIn(1, 8) else 0
+        settings.edit().putInt("crossfade_seconds", crossfadeSeconds).apply()
+    }
+    fun updateCrossfadeEnabled(on: Boolean) {
+        crossfadeEnabled = on
+        settings.edit().putBoolean("crossfade_enabled", on).apply()
+        applyCrossfade()
+    }
+    fun setCrossfadeValue(seconds: Int) {
+        crossfadeValue = seconds.coerceIn(1, 8)
+        settings.edit().putInt("crossfade_value", crossfadeValue).apply()
+        if (crossfadeEnabled) applyCrossfade()
+    }
+
     /** Lyrics on/off: when off, nothing is fetched or shown on the Now Playing screen. */
     var lyricsEnabled by mutableStateOf(settings.getBoolean("lyrics_enabled", true)); private set
     fun updateLyricsEnabled(enabled: Boolean) {
@@ -353,13 +376,8 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         controller?.setPlaybackSpeed(playbackSpeed)
     }
 
-    fun setCrossfade(seconds: Int) {
-        crossfadeSeconds = seconds.coerceIn(0, 8)
-        settings.edit().putInt("crossfade_seconds", crossfadeSeconds).apply()
-    }
-
-    /** Skip quiet intros / outros / long gaps between sections. */
-    var skipSilence by mutableStateOf(settings.getBoolean("skip_silence", false)); private set
+    /** Skip quiet intros / outros / long gaps between sections. Default on. */
+    var skipSilence by mutableStateOf(settings.getBoolean("skip_silence", true)); private set
     fun updateSkipSilence(on: Boolean) {
         skipSilence = on
         settings.edit().putBoolean("skip_silence", on).apply()

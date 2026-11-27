@@ -411,7 +411,7 @@ class PlaybackService : MediaSessionService() {
         getSharedPreferences("rustym_settings", MODE_PRIVATE).getInt("crossfade_seconds", 0)
 
     private fun skipSilenceEnabled(): Boolean =
-        getSharedPreferences("rustym_settings", MODE_PRIVATE).getBoolean("skip_silence", false)
+        getSharedPreferences("rustym_settings", MODE_PRIVATE).getBoolean("skip_silence", true)
 
     /** Flip skip-silence on every audio sink (each player has its own). A seek flushes
      * the sink so the new state applies immediately. */
@@ -486,7 +486,12 @@ class PlaybackService : MediaSessionService() {
                     val f = i.toFloat() / steps
                     p.volume = f
                     shadow.volume = 1f - f
-                    if (!p.isPlaying) return@launch // user paused mid-fade
+                    // NOTE: isPlaying is false while the incoming track buffers; the
+                    // real "user paused" signal is playWhenReady.
+                    if (!p.playWhenReady) {
+                        android.util.Log.d("RustymCrossfade", "aborted: paused")
+                        return@launch
+                    }
                 }
                 android.util.Log.d("RustymCrossfade", "done")
             } finally {

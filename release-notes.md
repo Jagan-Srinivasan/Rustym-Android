@@ -1,14 +1,14 @@
-# Rustym v1.1.7 🎵
+# Rustym v1.1.8 🎵
 
-**No more repeated audio after the blend** — the next song continues exactly where the crossfade left it, down to the sample.
+**The next song now starts from its true beginning after the blend.**
 
 ---
 
 ## 🔧 Fixed
-- **The next song replayed its last 1–2s after the blend.** Two causes, both fixed:
-  1. The fade-out/fade-in ramp ran on timer steps that overshoot, so the blend actually played ~1–2s more than the fade setting. The gain curve is now derived from **actual elapsed time**, so the blend is exactly the fade length you set
-  2. At the handover the next song's shadow player **kept playing forward** while the main player started at the older captured position — replaying that stretch. The shadow is now **frozen at the exact commit point**; the main player takes over from precisely where the blend stopped, at the exact blend volume, and finishes the fade-in on its own
-- Blend-accurate commit also means the progress bar shows the true position after the transition
+- **The song's opening seconds could be skipped.** During the anchor wait the next song sat *playing silently* on the shadow player, so its clock consumed the first ~1–2s of audio that you never heard — and the handover continued past them. The shadow player now stays **paused** during the wait and starts from its own 0:00 exactly when the blend begins, so:
+  - the fade-in covers the song's real opening
+  - the handover continues at ~the fade length into the song
+- Verified in logs: ramp now runs exactly the set fade length (elapsed-time gain curve, `fEnd=1.0`), handover continues at the blend position with no repeat and no skip
 
 ## ♻️ Kept
 - Artwork/title switch only when the previous song truly ends · equal-power DJ blending · manual skips instant · "Crossfading…" indicator · no trimming of the previous song's audio
@@ -20,4 +20,4 @@ Download **Rustym.apk** below, or let **Auto-update & install** do it.
 
 ---
 
-**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.1.6...v1.1.7
+**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.1.7...v1.1.8

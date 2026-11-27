@@ -485,7 +485,9 @@ class PlaybackService : MediaSessionService() {
         shadow.setMediaItem(incoming)
         shadow.volume = 0f
         shadow.prepare()
-        shadow.playWhenReady = true
+        // Held PAUSED (not silent-playing) during the anchor wait - otherwise its
+        // clock eats the song's opening seconds before the blend even starts.
+        shadow.playWhenReady = false
         serviceScope.launch(Dispatchers.Main) {
             var cancelled = false
             try {
@@ -525,6 +527,8 @@ class PlaybackService : MediaSessionService() {
                         return@launch
                     }
                 }
+                // Blend begins: now the incoming starts from its own 0:00.
+                shadow.playWhenReady = true
                 android.util.Log.d("RustymCrossfade", "blending ${fadeMs}ms (resolved=${waited}ms held=${held}ms)")
                 // Phase 3: equal-power (cos/sin) ramp over the outgoing's real last
                 // fadeMs. Gain is derived from ACTUAL elapsed time (not step counts)

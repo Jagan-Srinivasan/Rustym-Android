@@ -550,11 +550,23 @@ class PlaybackService : MediaSessionService() {
                     }
                 }
                 // Phase 4: the outgoing song is at its end; its auto-advance fires
-                // the takeover. Wait for it (container padding can delay it a bit).
+                // the takeover. The main player is silent (volume 0) here while the
+                // incoming keeps sounding on the shadow, so container padding is
+                // simply drained. If the auto-advance never comes (over-long
+                // container), force the takeover.
                 var tw = 0L
-                while (crossfadeActive && crossfadePlayer === shadow && tw < 5000L) {
+                while (crossfadeActive && crossfadePlayer === shadow && tw < 12_000L) {
                     kotlinx.coroutines.delay(50)
                     tw += 50
+                    if (!p.playWhenReady) {
+                        android.util.Log.d("RustymCrossfade", "aborted: paused")
+                        cancelled = true
+                        return@launch
+                    }
+                }
+                if (crossfadeActive && crossfadePlayer === shadow) {
+                    android.util.Log.d("RustymCrossfade", "padding drain; forcing takeover")
+                    maybeTakeover(p, forced = true)
                 }
             } finally {
                 // On takeover or cancel, crossfadePlayer is already null; only clean
@@ -574,36 +586,61 @@ class PlaybackService : MediaSessionService() {
 
     /**
      * The outgoing song reached its natural end during a blend: continue the
-     * incoming song on the main player from the exact position the blend reached,
-     * at the exact blend gain, and finish the fade-in there. The shadow is frozen
-     * first so nothing it already played is ever replayed.
+     * incoming song on the main player from the exact position the blend reached.
+     * The shadow keeps sounding while the main player re-points itself, so there
+     * is no silence and nothing already heard is ever replayed.
      */
-    private fun maybeTakeover(p: ExoPlayer) {
+    private fun maybeTakeover(p: ExoPlayer, forced: Boolean = false) {
         if (!crossfadeActive) return
         val shadow = crossfadePlayer ?: return
+        val wasOnOutgoing = fadeOutIndex != -1 && p.currentMediaItemIndex == fadeOutIndex
         crossfadePlayer = null
         crossfadeActive = false
         fadeOutIndex = -1
-        val pos = shadow.currentPosition.coerceAtLeast(0L)
         val f = blendProgress.coerceIn(0f, 1f)
         val g = kotlin.math.sin((f * Math.PI / 2.0).toFloat()).coerceIn(0f, 1f)
+        if (forced && wasOnOutgoing) {
+            // Over-long container: advance past the padding deliberately.
+            p.seekToNextMediaItem()
+        }
+        val pos = shadow.currentPosition.coerceAtLeast(0L)
         android.util.Log.d("RustymCrossfade", "takeover at ${pos}ms gain $f")
-        runCatching { shadow.pause() }
-        p.seekTo(pos)
-        p.volume = g
+        p.volume = 0f
+        if (pos > 100L) {
+            // Re-point the main player at the blend position. Re-preparing can
+            // take a moment - the shadow covers that time, still sounding.
+            p.seekTo(pos)
+            var t = 0L
+            while (p.playbackState != Player.STATE_READY && t < 10_000L) {
+                kotlinx.coroutines.delay(50)
+                t += 50
+                if (!p.playWhenReady) {
+                    runCatching { shadow.stop(); shadow.release() }
+                    p.volume = 1f
+                    return
+                }
+            }
+            // Fresh capture just before the main sounds: the shadow advanced
+            // during the re-prepare, and this must not be replayed.
+            val s2 = shadow.currentPosition.coerceAtLeast(0L)
+            if (kotlin.math.abs(s2 - pos) > 300L) runCatching { p.seekTo(s2) }
+        }
         if (!p.playWhenReady) p.playWhenReady = true
+        p.volume = g
+        runCatching { shadow.stop(); shadow.release() }
         serviceScope.launch(Dispatchers.Main) {
             // Finish the fade-in on the main player alone.
-            val remainMs = ((1f - f) * blendFadeMs).toLong().coerceIn(0L, 2_000L)
-            val steps = 8
-            for (j in 1..steps) {
-                if (remainMs <= 0L) break
-                kotlinx.coroutines.delay(remainMs / steps)
-                val ff = f + (1f - f) * j / steps
-                p.volume = kotlin.math.sin((ff * Math.PI / 2.0).toFloat())
+            val cap = if (f < 0.1f) 800L else 2_500L
+            val remainMs = ((1f - f) * blendFadeMs).toLong().coerceIn(0L, cap)
+            if (remainMs > 60L) {
+                val steps = 8
+                for (j in 1..steps) {
+                    kotlinx.coroutines.delay(remainMs / steps)
+                    val ff = f + (1f - f) * j / steps
+                    p.volume = kotlin.math.sin((ff * Math.PI / 2.0).toFloat())
+                }
             }
             p.volume = 1f
-            runCatching { shadow.stop(); shadow.release() }
         }
     }
 

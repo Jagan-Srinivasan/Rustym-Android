@@ -142,6 +142,8 @@ class PlaybackService : MediaSessionService() {
     private var crossfadePlayer: ExoPlayer? = null
     @Volatile private var crossfadeActive = false
     @Volatile private var fadeOutIndex = -1
+    @Volatile private var blendProgress = 0f
+    @Volatile private var blendFadeMs = 0L
     private val silenceProcessors = mutableListOf<SilenceSkippingAudioProcessor>()
     private val favoritesListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "favorites") refreshLikeButton()
@@ -224,6 +226,11 @@ class PlaybackService : MediaSessionService() {
         // A track that cannot be played (removed, region-locked, expired link) must not stop the queue.
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+                // The outgoing song reached its natural end during a blend:
+                // take the incoming song over exactly where the blend is.
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                    (session?.player as? ExoPlayer)?.let { maybeTakeover(it) }
+                }
                 refreshLikeButton()
                 prefetchNext(player)
                 updateWidget(player)
@@ -417,7 +424,6 @@ class PlaybackService : MediaSessionService() {
         session?.player?.let { p -> runCatching { p.seekTo(p.currentPosition) } }
     }
 
-    /** Start a crossfade when the current track is within the fade window of its end. */
     private fun maybeCrossfade(p: ExoPlayer) {
         val secs = crossfadeSeconds()
         if (secs <= 0) {
@@ -429,46 +435,42 @@ class PlaybackService : MediaSessionService() {
             if (fadeOutIndex != -1 && p.currentMediaItemIndex != fadeOutIndex) cancelCrossfade(p)
             return
         }
-        if (crossfadeActive || !p.hasNextMediaItem() || !p.isPlaying) return
+        if (!p.hasNextMediaItem() || !p.isPlaying) return
         val dur = p.duration
         if (dur == C.TIME_UNSET || dur <= 0) return
         val remaining = dur - p.currentPosition
-        // Trigger with generous headroom: the incoming stream has to resolve +
-        // buffer while the tail keeps playing, and the blend is later anchored to
-        // the tail's real last fadeMs, so starting early never cuts the song.
+        // Trigger with headroom: the incoming stream has to resolve + buffer while
+        // the outgoing song keeps playing, and the blend is anchored to the
+        // outgoing song's real last fadeMs, so starting early never cuts it.
         if (remaining > 0 && remaining <= secs * 1000L + 2500L) startCrossfade(p)
     }
 
     /**
-     * Overlap the outgoing track (main player, UI stays on it until it truly ends)
-     * with the incoming track (shadow player), which is held silent and ready until
-     * the outgoing song reaches its real last fadeMs, then blended in and committed
-     * (queue advances only at the end, so artwork/title switch when the song ends).
+     * Crossfade per the reference dual-player pattern: the outgoing song keeps
+     * playing on the main player (UI stays on it) while the incoming song is
+     * prepared on a shadow player. The shadow starts playing (from its own 0:00)
+     * only when the outgoing song enters its real last fadeMs; the two are blended
+     * with equal-power (cos/sin) gain curves. When the outgoing song ends
+     * NATURALLY, ExoPlayer auto-advances and the takeover below seeks the main
+     * player to the exact position the blend reached - no restart, no replay, and
+     * none of the player's own transition machinery is suppressed.
      */
     private fun startCrossfade(p: ExoPlayer) {
         if (crossfadeActive || !p.hasNextMediaItem()) return
-        val outgoing = p.currentMediaItem ?: return
-        val nextIndex = p.currentMediaItemIndex + 1
-        val incoming = p.getMediaItemAt(nextIndex)
-        val startPos = p.currentPosition
+        val incoming = p.getMediaItemAt(p.currentMediaItemIndex + 1)
         val dur = p.duration
         if (dur == C.TIME_UNSET || dur <= 0) return
-        val remaining = (dur - startPos).coerceAtLeast(0L)
+        val remaining = (dur - p.currentPosition).coerceAtLeast(0L)
         val ms = (crossfadeSeconds() * 1000L).coerceIn(500L, 10_000L)
         // Never fade longer than the track has left - a dry tail mid-fade is worse
         // than a shorter blend.
         val fadeMs = minOf(ms, remaining)
-        if (fadeMs < 400L) {
-            cancelCrossfade(p)
-            return
-        }
+        if (fadeMs < 400L) return
         crossfadeActive = true
         fadeOutIndex = p.currentMediaItemIndex
-        // While the blend runs, the outgoing song must NOT auto-advance at its end:
-        // ExoPlayer would jump the queue and restart the next song from 0. Instead
-        // it pauses at the end and the commit below advances it deliberately.
-        p.pauseAtEndOfMediaItems = true
-        android.util.Log.d("RustymCrossfade", "start fade=${fadeMs}ms from pos=$startPos")
+        blendFadeMs = fadeMs
+        blendProgress = 0f
+        android.util.Log.d("RustymCrossfade", "start fade=${fadeMs}ms from pos=${p.currentPosition}")
         val shadow = ExoPlayer.Builder(this, renderersFactory!!)
             .setMediaSourceFactory(mediaSourceFactory!!)
             .setAudioAttributes(
@@ -485,128 +487,119 @@ class PlaybackService : MediaSessionService() {
         shadow.setMediaItem(incoming)
         shadow.volume = 0f
         shadow.prepare()
-        // Held PAUSED (not silent-playing) during the anchor wait - otherwise its
-        // clock eats the song's opening seconds before the blend even starts.
-        shadow.playWhenReady = false
+        // Held paused during the anchor wait so its clock cannot eat the opening.
         serviceScope.launch(Dispatchers.Main) {
             var cancelled = false
             try {
-                // Phase 1: the incoming stream resolves + buffers (max 6s) while the
-                // outgoing song keeps playing at full volume - nothing is silent yet.
+                // Phase 1: incoming resolves + buffers (max 6s) while the outgoing
+                // keeps playing at full volume - nothing is silent yet.
                 var waited = 0L
-                while (shadow.playbackState == Player.STATE_BUFFERING && p.playWhenReady && waited < 6000L) {
+                while (shadow.playbackState == Player.STATE_BUFFERING && waited < 6000L) {
                     kotlinx.coroutines.delay(100)
                     waited += 100
-                    if (crossfadePlayer !== shadow || p.currentMediaItemIndex != fadeOutIndex) {
+                    if (crossfadePlayer !== shadow) {
                         cancelled = true
                         return@launch
                     }
                 }
-                if (shadow.playbackState == Player.STATE_IDLE || shadow.playbackState == Player.STATE_ENDED) {
-                    android.util.Log.d("RustymCrossfade", "aborted: incoming not playable")
+                if (shadow.playbackState != Player.STATE_READY) {
+                    android.util.Log.d("RustymCrossfade", "aborted: incoming not ready")
                     cancelled = true
                     return@launch
                 }
-                if (!p.playWhenReady && p.playbackState != Player.STATE_ENDED) {
-                    android.util.Log.d("RustymCrossfade", "aborted: paused")
-                    cancelled = true
-                    return@launch
-                }
-                // Phase 2: hold the (silent, ready) incoming until the outgoing song
-                // reaches its real last fadeMs window, anchored on the outgoing's own
-                // clock. No dead air: the outgoing is still sounding the whole time.
+                // Phase 2: hold (outgoing still sounding) until its real last fadeMs,
+                // anchored on the outgoing's own clock.
                 var held = 0L
                 while (crossfadePlayer === shadow && p.currentMediaItemIndex == fadeOutIndex) {
                     if (dur - p.currentPosition <= fadeMs + 40L) break
                     kotlinx.coroutines.delay(60)
                     held += 60
                     if (held > 8000L) break
-                    if (!p.playWhenReady && p.playbackState != Player.STATE_ENDED) {
+                    if (!p.playWhenReady) {
                         android.util.Log.d("RustymCrossfade", "aborted: paused")
                         cancelled = true
                         return@launch
                     }
                 }
-                // Blend begins: now the incoming starts from its own 0:00.
+                if (crossfadePlayer !== shadow) return@launch
+                // Phase 3: blend. The outgoing ends naturally during it and the
+                // transition listener takes over; this loop just runs the gains.
                 shadow.playWhenReady = true
                 android.util.Log.d("RustymCrossfade", "blending ${fadeMs}ms (resolved=${waited}ms held=${held}ms)")
-                // Phase 3: equal-power (cos/sin) ramp over the outgoing's real last
-                // fadeMs. Gain is derived from ACTUAL elapsed time (not step counts)
-                // so the blend length matches the fadeMs setting exactly - otherwise
-                // delay() overshoot makes the shadow play 1-2s beyond the fade,
-                // which the commit would then replay.
                 val rampStart = android.os.SystemClock.elapsedRealtime()
-                var fEnd = 0f
-                while (true) {
+                while (crossfadePlayer === shadow) {
                     val elapsed = android.os.SystemClock.elapsedRealtime() - rampStart
-                    fEnd = (elapsed.toFloat() / fadeMs).coerceIn(0f, 1f)
-                    if (elapsed >= fadeMs) break
-                    kotlinx.coroutines.delay(50)
-                    if (crossfadePlayer !== shadow) return@launch
-                    // The user skipping past the outgoing song ends this blend.
-                    if (p.currentMediaItemIndex != fadeOutIndex) {
-                        android.util.Log.d("RustymCrossfade", "aborted: queue moved")
-                        cancelled = true
-                        return@launch
-                    }
-                    // DJ-standard gain curves: the combined loudness stays ~constant.
-                    val angle = (fEnd * Math.PI / 2.0).toFloat()
+                    blendProgress = (elapsed.toFloat() / fadeMs).coerceIn(0f, 1f)
+                    val angle = (blendProgress * Math.PI / 2.0).toFloat()
                     p.volume = kotlin.math.cos(angle)
                     shadow.volume = kotlin.math.sin(angle)
-                    // Song reached its end mid-ramp -> commit early, seamlessly.
-                    if (p.playbackState == Player.STATE_ENDED) break
-                    if (!p.playWhenReady && p.playbackState != Player.STATE_ENDED) {
+                    if (blendProgress >= 1f) break
+                    kotlinx.coroutines.delay(50)
+                    if (!p.playWhenReady && p.currentMediaItemIndex == fadeOutIndex) {
                         android.util.Log.d("RustymCrossfade", "aborted: paused")
                         cancelled = true
                         return@launch
                     }
                 }
-                fEnd = ((android.os.SystemClock.elapsedRealtime() - rampStart).toFloat() / fadeMs).coerceIn(0f, 1f)
-                // Phase 4: commit. The outgoing song has finished - NOW the queue
-                // advances, so artwork/title/lyrics switch exactly when the song ends.
-                // The shadow is FROZEN at the handover point: it must not keep
-                // playing, or the main player replays that last stretch.
-                val incomingPos = shadow.currentPosition.coerceAtLeast(0L)
-                val incomingGain = kotlin.math.sin((fEnd * Math.PI / 2.0).toFloat()).coerceIn(0f, 1f)
-                fadeOutIndex = -1 // further index change is the commit itself
-                android.util.Log.d("RustymCrossfade", "commit (incoming at ${incomingPos}ms, gain $fEnd)")
-                runCatching { shadow.pause() }
-                p.volume = 0f
-                p.playWhenReady = true
-                p.seekToNextMediaItem()
-                p.seekTo(incomingPos)
-                var t = 0L
-                while (p.playbackState != Player.STATE_READY && crossfadePlayer === shadow && t < 10_000L) {
+                // Phase 4: the outgoing song is at its end; its auto-advance fires
+                // the takeover. Wait for it (container padding can delay it a bit).
+                var tw = 0L
+                while (crossfadeActive && crossfadePlayer === shadow && tw < 5000L) {
                     kotlinx.coroutines.delay(50)
-                    t += 50
+                    tw += 50
                 }
-                // Take over at the exact blend gain and finish the fade-in on the
-                // main player alone.
-                p.volume = incomingGain
-                val remainMs = ((1f - fEnd) * fadeMs).toLong()
-                if (remainMs > 30L) {
-                    val remainSteps = 8
-                    for (j in 1..remainSteps) {
-                        kotlinx.coroutines.delay(remainMs / remainSteps)
-                        if (crossfadePlayer !== shadow) break
-                        val f = fEnd + (1f - fEnd) * j / remainSteps
-                        p.volume = kotlin.math.sin((f * Math.PI / 2.0).toFloat())
-                    }
-                }
-                android.util.Log.d("RustymCrossfade", "done (fEnd=$fEnd commit=${t}ms)")
             } finally {
-                p.volume = 1f
-                p.pauseAtEndOfMediaItems = false
-                shadow.stop()
-                shadow.release()
-                if (crossfadePlayer === shadow) crossfadePlayer = null
-                crossfadeActive = false
-                fadeOutIndex = -1
+                // On takeover or cancel, crossfadePlayer is already null; only clean
+                // up when this coroutine abandons the blend itself.
+                if (crossfadePlayer === shadow) {
+                    android.util.Log.d("RustymCrossfade", "blend ended without takeover")
+                    shadow.stop()
+                    shadow.release()
+                    crossfadePlayer = null
+                    crossfadeActive = false
+                    fadeOutIndex = -1
+                    p.volume = 1f
+                }
             }
         }
     }
 
-    /** Hand control back to the main player and drop the fading tail. */
+    /**
+     * The outgoing song reached its natural end during a blend: continue the
+     * incoming song on the main player from the exact position the blend reached,
+     * at the exact blend gain, and finish the fade-in there. The shadow is frozen
+     * first so nothing it already played is ever replayed.
+     */
+    private fun maybeTakeover(p: ExoPlayer) {
+        if (!crossfadeActive) return
+        val shadow = crossfadePlayer ?: return
+        crossfadePlayer = null
+        crossfadeActive = false
+        fadeOutIndex = -1
+        val pos = shadow.currentPosition.coerceAtLeast(0L)
+        val f = blendProgress.coerceIn(0f, 1f)
+        val g = kotlin.math.sin((f * Math.PI / 2.0).toFloat()).coerceIn(0f, 1f)
+        android.util.Log.d("RustymCrossfade", "takeover at ${pos}ms gain $f")
+        runCatching { shadow.pause() }
+        p.seekTo(pos)
+        p.volume = g
+        if (!p.playWhenReady) p.playWhenReady = true
+        serviceScope.launch(Dispatchers.Main) {
+            // Finish the fade-in on the main player alone.
+            val remainMs = ((1f - f) * blendFadeMs).toLong().coerceIn(0L, 2_000L)
+            val steps = 8
+            for (j in 1..steps) {
+                if (remainMs <= 0L) break
+                kotlinx.coroutines.delay(remainMs / steps)
+                val ff = f + (1f - f) * j / steps
+                p.volume = kotlin.math.sin((ff * Math.PI / 2.0).toFloat())
+            }
+            p.volume = 1f
+            runCatching { shadow.stop(); shadow.release() }
+        }
+    }
+
+    /** Hand control back to the main player and drop the fading incoming. */
     private fun cancelCrossfade(p: ExoPlayer?) {
         if (!crossfadeActive) return
         android.util.Log.d("RustymCrossfade", "cancelled")

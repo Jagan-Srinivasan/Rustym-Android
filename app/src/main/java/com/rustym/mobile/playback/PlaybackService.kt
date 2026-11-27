@@ -312,12 +312,12 @@ class PlaybackService : MediaSessionService() {
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo,
                 command: Int,
-            ): ListenableFuture<SessionResult> {
+            ): Int {
                 // A manual seek/skip or pause during a fade hands control back to the main player.
                 if (crossfadeActive && command in SEEK_CANCEL_COMMANDS) {
                     cancelCrossfade(session.player as? ExoPlayer)
                 }
-                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                return command // pass the command through unchanged
             }
         }
         val likeButton = CommandButton.Builder(CommandButton.ICON_UNDEFINED)

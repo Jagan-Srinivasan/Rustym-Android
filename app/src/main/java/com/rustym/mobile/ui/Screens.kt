@@ -1843,7 +1843,7 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                     "Show lyrics",
                     "Fetch and display lyrics on the Now Playing screen",
                     vm.lyricsEnabled,
-                    vm.updateLyricsEnabled,
+                    vm::updateLyricsEnabled,
                 )
                 Text("Sources: Unison, Better Lyrics, KuGou, LRCLIB, NetEase and Lyrics.ovh.", color = Dim, style = MaterialTheme.typography.bodySmall)
             }

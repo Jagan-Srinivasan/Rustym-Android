@@ -399,7 +399,7 @@ class PlaybackService : MediaSessionService() {
         val dur = p.duration
         if (dur == C.TIME_UNSET || dur <= 0) return
         val remaining = dur - p.currentPosition
-        if (remaining in 1..(secs * 1000L)) startCrossfade(p)
+        if (remaining > 0 && remaining <= secs * 1000L) startCrossfade(p)
     }
 
     /** Overlap the outgoing track's tail (shadow player) with the incoming track (main player). */

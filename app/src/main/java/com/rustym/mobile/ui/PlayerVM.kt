@@ -91,7 +91,7 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
 
     /** Lyrics on/off: when off, nothing is fetched or shown on the Now Playing screen. */
     var lyricsEnabled by mutableStateOf(settings.getBoolean("lyrics_enabled", true)); private set
-    fun setLyricsEnabled(enabled: Boolean) {
+    fun updateLyricsEnabled(enabled: Boolean) {
         lyricsEnabled = enabled
         settings.edit().putBoolean("lyrics_enabled", enabled).apply()
         if (!enabled) {

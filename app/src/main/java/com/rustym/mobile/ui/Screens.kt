@@ -1541,7 +1541,7 @@ fun UpdateAvailableDialog(release: Updater.Release, onOpen: () -> Unit, onDismis
                 if (release.notes.isNotBlank()) {
                     Spacer(Modifier.height(10.dp))
                     Text("What's new:", style = MaterialTheme.typography.titleSmall)
-                    Text(release.notes.take(600), color = Dim, style = MaterialTheme.typography.bodySmall)
+                    Text(plainReleaseNotes(release.notes).take(600), color = Dim, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
@@ -1558,10 +1558,20 @@ private val WhatsNewFallback = """
     • Rustym checks for updates automatically at startup
 """.trimIndent()
 
+/** Turns GitHub release markdown into readable dialog text. */
+private fun plainReleaseNotes(md: String): String = md
+    .replace(Regex("(?m)^#{1,6}\\s*"), "")
+    .replace("**", "")
+    .replace(Regex("(?m)^-{3,}\\s*$"), "")
+    .replace(Regex("(?m)^\\s*\\*\\s*"), "• ")
+    .replace("`", "")
+    .replace(Regex("\\n{3,}"), "\n\n")
+    .trim()
+
 /** Shown once, on the first launch after an app update. */
 @Composable
 fun WhatsNewDialog(release: Updater.Release?, versionName: String, onDismiss: () -> Unit) {
-    val notes = release?.notes?.takeIf { it.isNotBlank() } ?: WhatsNewFallback
+    val notes = release?.notes?.takeIf { it.isNotBlank() }?.let { plainReleaseNotes(it) } ?: WhatsNewFallback
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("What's new in Rustym $versionName") },

@@ -1,11 +1,12 @@
-# Rustym v1.0.3 🎵
+# Rustym v1.0.4 🎵
 
-**Hotfix on top of v1.0.2.** All the v1.0.2 features are here — Now Playing gestures, the one-time tutorial, the lyrics switch, the cleaner Settings page and the built-in update check — plus one reliability fix:
+All the v1.0.2 features are here — Now Playing gestures, the one-time tutorial, the lyrics switch, the cleaner Settings page and the built-in update check — with two polish fixes:
 
 ---
 
 ## 🔧 Fixed
 - **"What's new" now shows reliably after every update.** On some upgrades from v1.0.1 the dialog was skipped on the first launch. Upgrading devices are now detected properly, and the release notes greet you exactly once.
+- **Release notes read like notes.** The "What's new" dialog now formats the GitHub release notes cleanly — no stray `#`, `**` or `---` markdown symbols.
 
 ---
 
@@ -26,4 +27,4 @@
 
 ---
 
-**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.0.2...v1.0.3
+**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.0.3...v1.0.4

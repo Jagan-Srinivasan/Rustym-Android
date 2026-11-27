@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import android.content.Intent
@@ -125,6 +126,7 @@ class PlaybackService : MediaSessionService() {
     private const val ACTION_TOGGLE_LIKE = "com.rustym.mobile.action.TOGGLE_LIKE"
     private const val ACTION_ROUTE_TO_DEVICE = "com.rustym.mobile.action.ROUTE_TO_DEVICE"
     private const val ACTION_CROSSFADE_NEXT = "com.rustym.mobile.action.CROSSFADE_NEXT"
+    private const val ACTION_SKIP_SILENCE = "com.rustym.mobile.action.SKIP_SILENCE"
 }
     private var session: MediaSession? = null
     private lateinit var library: Library
@@ -139,6 +141,7 @@ class PlaybackService : MediaSessionService() {
     private var crossfadePlayer: ExoPlayer? = null
     @Volatile private var crossfadeActive = false
     @Volatile private var crossfadeInternalSeek = false
+    private val silenceProcessors = mutableListOf<SilenceSkippingAudioProcessor>()
     private val favoritesListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "favorites") refreshLikeButton()
     }
@@ -190,7 +193,17 @@ class PlaybackService : MediaSessionService() {
                 return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf(EightDAudioProcessor()))
+                    .setAudioProcessors(
+                        arrayOf(
+                            // Skip quiet intros / outros / long gaps. Disabled unless the
+                            // user turns on "Skip silence"; applied live by enabling it.
+                            SilenceSkippingAudioProcessor().apply {
+                                setEnabled(skipSilenceEnabled())
+                                silenceProcessors.add(this)
+                            },
+                            EightDAudioProcessor(),
+                        )
+                    )
                     .build()
             }
         }
@@ -262,7 +275,8 @@ class PlaybackService : MediaSessionService() {
                 val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
                     .buildUpon().add(likeCommand)
                     .add(SessionCommand(ACTION_ROUTE_TO_DEVICE, Bundle.EMPTY))
-                    .add(SessionCommand(ACTION_CROSSFADE_NEXT, Bundle.EMPTY)).build()
+                    .add(SessionCommand(ACTION_CROSSFADE_NEXT, Bundle.EMPTY))
+                    .add(SessionCommand(ACTION_SKIP_SILENCE, Bundle.EMPTY)).build()
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(commands)
                     .build()
@@ -301,6 +315,13 @@ class PlaybackService : MediaSessionService() {
                     } else {
                         p?.seekToNextMediaItem()
                     }
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
+                if (customCommand.customAction == ACTION_SKIP_SILENCE) {
+                    val on = args.getBoolean("enabled", false)
+                    getSharedPreferences("rustym_settings", MODE_PRIVATE).edit()
+                        .putBoolean("skip_silence", on).apply()
+                    toggleSkipSilence(on)
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
                 if (customCommand.customAction == ACTION_ROUTE_TO_DEVICE) {
@@ -389,6 +410,16 @@ class PlaybackService : MediaSessionService() {
     private fun crossfadeSeconds(): Int =
         getSharedPreferences("rustym_settings", MODE_PRIVATE).getInt("crossfade_seconds", 0)
 
+    private fun skipSilenceEnabled(): Boolean =
+        getSharedPreferences("rustym_settings", MODE_PRIVATE).getBoolean("skip_silence", false)
+
+    /** Flip skip-silence on every audio sink (each player has its own). A seek flushes
+     * the sink so the new state applies immediately. */
+    private fun toggleSkipSilence(on: Boolean) {
+        silenceProcessors.forEach { runCatching { it.setEnabled(on) } }
+        session?.player?.let { p -> runCatching { p.seekTo(p.currentPosition) } }
+    }
+
     /** Start a crossfade when the current track is within the fade window of its end. */
     private fun maybeCrossfade(p: ExoPlayer) {
         val secs = crossfadeSeconds()
@@ -408,8 +439,20 @@ class PlaybackService : MediaSessionService() {
         if (crossfadeActive || !p.hasNextMediaItem()) return
         val outgoing = p.currentMediaItem ?: return
         val startPos = p.currentPosition
+        val dur = p.duration
+        if (dur == C.TIME_UNSET || dur <= 0) return
+        val remaining = (dur - startPos).coerceAtLeast(0L)
         val ms = (crossfadeSeconds() * 1000L).coerceIn(500L, 10_000L)
+        // Never fade longer than the track has left - a dry tail mid-fade is worse
+        // than a shorter blend.
+        val fadeMs = minOf(ms, remaining)
+        if (fadeMs < 400L) {
+            cancelCrossfade(p)
+            p.seekToNextMediaItem()
+            return
+        }
         crossfadeActive = true
+        android.util.Log.d("RustymCrossfade", "start fade=${fadeMs}ms from pos=$startPos")
         val shadow = ExoPlayer.Builder(this, renderersFactory!!)
             .setMediaSourceFactory(mediaSourceFactory!!)
             .setAudioAttributes(
@@ -438,13 +481,14 @@ class PlaybackService : MediaSessionService() {
             val steps = 24
             try {
                 for (i in 1..steps) {
-                    kotlinx.coroutines.delay(ms / steps)
+                    kotlinx.coroutines.delay(fadeMs / steps)
                     if (crossfadePlayer !== shadow) return@launch
                     val f = i.toFloat() / steps
                     p.volume = f
                     shadow.volume = 1f - f
                     if (!p.isPlaying) return@launch // user paused mid-fade
                 }
+                android.util.Log.d("RustymCrossfade", "done")
             } finally {
                 p.volume = 1f
                 shadow.stop()

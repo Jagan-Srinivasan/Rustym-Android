@@ -1865,7 +1865,8 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Text("Playback speed", style = MaterialTheme.typography.titleMedium)
                 val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
                 SettingsChips(speeds.map { "${it}x" }, speeds.indexOfFirst { it == vm.playbackSpeed }.coerceAtLeast(0)) { i -> vm.updatePlaybackSpeed(speeds[i]) }
-                Text("Skip fade: ${vm.crossfadeSeconds}s", color = Dim, style = MaterialTheme.typography.bodySmall)
+                Text("Crossfade: ${if (vm.crossfadeSeconds == 0) "Off" else "${vm.crossfadeSeconds}s"}", style = MaterialTheme.typography.titleMedium)
+                Text("Blend the end of each song into the next one - works on skips and natural ends", color = Dim, style = MaterialTheme.typography.bodySmall)
                 Slider(value = vm.crossfadeSeconds.toFloat(), onValueChange = { vm.setCrossfade(it.toInt()) }, valueRange = 0f..8f)
                 Text("Sleep timer", style = MaterialTheme.typography.titleMedium)
                 val sleep = listOf(0, 15, 30, 45, 60)
@@ -1874,6 +1875,12 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Text("Choose where Rustym opens", color = Dim, style = MaterialTheme.typography.bodySmall)
                 val tabs = listOf("Home", "Search", "Device", "Library")
                 SettingsChips(tabs, vm.startTab.coerceIn(0, tabs.lastIndex)) { i -> vm.chooseStartTab(i) }
+                SettingsSwitchRow(
+                    "Skip silence",
+                    "Skip quiet intros, outros and long gaps in songs",
+                    vm.skipSilence,
+                    vm::updateSkipSilence,
+                )
             }
         }
 

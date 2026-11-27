@@ -358,6 +358,21 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         settings.edit().putInt("crossfade_seconds", crossfadeSeconds).apply()
     }
 
+    /** Skip quiet intros / outros / long gaps between sections. */
+    var skipSilence by mutableStateOf(settings.getBoolean("skip_silence", false)); private set
+    fun updateSkipSilence(on: Boolean) {
+        skipSilence = on
+        settings.edit().putBoolean("skip_silence", on).apply()
+        controller?.let {
+            runCatching {
+                it.sendCustomCommand(
+                    androidx.media3.session.SessionCommand("com.rustym.mobile.action.SKIP_SILENCE", android.os.Bundle.EMPTY),
+                    android.os.Bundle().apply { putBoolean("enabled", on) },
+                )
+            }
+        }
+    }
+
     fun setSleepTimer(minutes: Int) {
         sleepJob?.cancel()
         sleepTimerMinutes = minutes.coerceAtLeast(0)

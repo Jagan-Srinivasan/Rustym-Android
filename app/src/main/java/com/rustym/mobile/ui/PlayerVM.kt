@@ -104,11 +104,17 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
     fun updateCrossfadeEnabled(on: Boolean) {
         crossfadeEnabled = on
         settings.edit().putBoolean("crossfade_enabled", on).apply()
+        // First enable (before the user ever picked a fade length) defaults to 4s.
+        if (on && !settings.getBoolean("crossfade_value_touched", false)) {
+            crossfadeValue = 4
+            settings.edit().putInt("crossfade_value", 4).apply()
+        }
         applyCrossfade()
     }
     fun updateCrossfadeValue(seconds: Int) {
         crossfadeValue = seconds.coerceIn(1, 8)
         settings.edit().putInt("crossfade_value", crossfadeValue).apply()
+        settings.edit().putBoolean("crossfade_value_touched", true).apply()
         if (crossfadeEnabled) applyCrossfade()
     }
 

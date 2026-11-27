@@ -140,7 +140,6 @@ class PlaybackService : MediaSessionService() {
     private var mediaSourceFactory: androidx.media3.exoplayer.source.MediaSource.Factory? = null
     private var crossfadePlayer: ExoPlayer? = null
     @Volatile private var crossfadeActive = false
-    @Volatile private var crossfadeInternalSeek = false
     private val silenceProcessors = mutableListOf<SilenceSkippingAudioProcessor>()
     private val favoritesListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "favorites") refreshLikeButton()
@@ -222,15 +221,6 @@ class PlaybackService : MediaSessionService() {
 
         // A track that cannot be played (removed, region-locked, expired link) must not stop the queue.
         player.addListener(object : Player.Listener {
-            override fun onPositionDiscontinuity(
-                positionInfo: androidx.media3.common.Player.PositionInfo,
-                newPositionInfo: androidx.media3.common.Player.PositionInfo,
-                reason: Int,
-            ) {
-                // A manual seek/skip mid-fade hands control back to the main player.
-                // (The seek inside startCrossfade itself is flagged so it's ignored here.)
-                if (crossfadeActive && !crossfadeInternalSeek) cancelCrossfade(player as? ExoPlayer)
-            }
             override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
                 refreshLikeButton()
                 prefetchNext(player)
@@ -474,15 +464,23 @@ class PlaybackService : MediaSessionService() {
         // The queue moves to the next item at once (UI, lyrics, stats update now);
         // its audio stays silent until the ramp brings it up.
         p.volume = 0f
-        crossfadeInternalSeek = true
         p.seekToNextMediaItem()
-        crossfadeInternalSeek = false
+        // NOTE: ExoPlayer dispatches listener events asynchronously, so we cannot
+        // flag-and-ignore the discontinuity we just caused. Instead the ramp loop
+        // below cancels if the queue index moves beyond the item we faded into.
+        val expectedIndex = p.currentMediaItemIndex
+        android.util.Log.d("RustymCrossfade", "fading into item $expectedIndex")
         serviceScope.launch(Dispatchers.Main) {
             val steps = 24
             try {
                 for (i in 1..steps) {
                     kotlinx.coroutines.delay(fadeMs / steps)
                     if (crossfadePlayer !== shadow) return@launch
+                    // The user skipping past the faded-into item ends this fade.
+                    if (p.currentMediaItemIndex != expectedIndex) {
+                        android.util.Log.d("RustymCrossfade", "aborted: queue moved")
+                        return@launch
+                    }
                     val f = i.toFloat() / steps
                     p.volume = f
                     shadow.volume = 1f - f
@@ -506,6 +504,8 @@ class PlaybackService : MediaSessionService() {
 
     /** Hand control back to the main player and drop the fading tail. */
     private fun cancelCrossfade(p: ExoPlayer?) {
+        if (!crossfadeActive) return
+        android.util.Log.d("RustymCrossfade", "cancelled")
         val shadow = crossfadePlayer
         crossfadePlayer = null
         crossfadeActive = false

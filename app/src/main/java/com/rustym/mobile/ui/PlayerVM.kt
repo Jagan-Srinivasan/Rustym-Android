@@ -88,6 +88,22 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
     private val settings = app.getSharedPreferences("rustym_settings", android.content.Context.MODE_PRIVATE)
     private val lyricsPrefs = app.getSharedPreferences("rustym_lyrics", android.content.Context.MODE_PRIVATE)
     private val statsPrefs = app.getSharedPreferences("rustym_stats", android.content.Context.MODE_PRIVATE)
+
+    /** Lyrics on/off: when off, nothing is fetched or shown on the Now Playing screen. */
+    var lyricsEnabled by mutableStateOf(settings.getBoolean("lyrics_enabled", true)); private set
+    fun setLyricsEnabled(enabled: Boolean) {
+        lyricsEnabled = enabled
+        settings.edit().putBoolean("lyrics_enabled", enabled).apply()
+        if (!enabled) {
+            lyricsJob?.cancel()
+            lyricsText = ""
+            lyricsSource = ""
+            lyricsLoading = false
+            lyricsNotFound = false
+        } else {
+            current?.let { loadLyrics(it) }
+        }
+    }
     private val playCounts = mutableMapOf<String, Int>()
     private val statsTracks = mutableMapOf<String, Track>()
     var totalListeningMs by mutableStateOf(statsPrefs.getLong("listening_ms", 0L)); private set
@@ -403,6 +419,7 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
     /** Lyrics are normalized to LRC where possible so every source shares one renderer. */
     private fun loadLyrics(track: Track) {
         lyricsJob?.cancel()
+        if (!lyricsEnabled) return
         val cached = lyricsPrefs.getString(track.id, null)
         lyricsText = cached?.takeUnless { it == noLyricsMarker }?.orEmpty() ?: ""
         lyricsNotFound = cached == noLyricsMarker
@@ -598,6 +615,20 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         if (line.trim().startsWith("[")) Regex("^\\[[^\\]]+]\\s*").replace(line, "").takeIf { it.isNotBlank() }
         else line.takeIf { it.isNotBlank() }
     }.joinToString("\n")
+
+    // ---- volume via vertical swipe on the album art ----
+
+    /** -1f = never captured yet (the crossfade routine also writes controller volume). */
+    var playerVolume by mutableStateOf(-1f); private set
+
+    /** Nudge the player volume by [delta] (0..1 span) and return the new volume. */
+    fun nudgeVolume(delta: Float): Float {
+        val c = controller ?: return 0f
+        if (playerVolume < 0f) playerVolume = c.volume
+        playerVolume = (playerVolume + delta).coerceIn(0f, 1f)
+        c.volume = playerVolume
+        return playerVolume
+    }
 
     fun previous() {
         val c = controller ?: return

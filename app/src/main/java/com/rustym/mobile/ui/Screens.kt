@@ -46,6 +46,8 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -55,6 +57,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -78,6 +81,13 @@ import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SwipeDown
+import androidx.compose.material.icons.filled.SwipeLeft
+import androidx.compose.material.icons.filled.SwipeRight
+import androidx.compose.material.icons.filled.SwipeUp
+import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Edit
@@ -128,6 +138,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import com.rustym.mobile.Updater
 import com.rustym.mobile.data.Track
 import com.rustym.mobile.playback.AudioCache
 import com.rustym.mobile.playback.AudioFx
@@ -1037,6 +1048,17 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
     var showAddTo by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    // Gesture tutorial: shown once per app version (after an update / first install).
+    val versionCode = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toInt() }.getOrDefault(0)
+    }
+    val tutorialPrefs = remember { context.getSharedPreferences("rustym_settings", android.content.Context.MODE_PRIVATE) }
+    var showTutorial by remember { mutableStateOf(!tutorialPrefs.getBoolean("np_tutorial_shown_$versionCode", false)) }
+    val finishTutorial = {
+        tutorialPrefs.edit().putBoolean("np_tutorial_shown_$versionCode", true).apply()
+        showTutorial = false
+    }
+
     LaunchedEffect(t?.id, vm.isPlaying) {
         while (true) {
             if (!dragging) { pos = vm.positionMs(); dur = vm.durationMs().coerceAtLeast(1L) }
@@ -1078,10 +1100,66 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             }
         } else if (t != null) {
             // Album art scales to the space between the top bar and the song info,
-            // so no dead gap is left above the card.
+            // so no dead gap is left above the card. Swipe left/right anywhere on the
+            // card to change the song; swipe up/down on the art itself for volume.
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val artSize = minOf(maxWidth, maxHeight) - 36.dp
-                Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), artSize, corner = 26.dp)
+                var volumePct by remember { mutableStateOf<Int?>(null) }
+                LaunchedEffect(volumePct) {
+                    if (volumePct != null) { delay(1600); volumePct = null }
+                }
+                Box(
+                    Modifier
+                        .pointerInput(vm) {
+                            var drag = 0f
+                            detectHorizontalDragGestures(
+                                onHorizontalDrag = { _, amount -> drag += amount },
+                                onDragEnd = {
+                                    if (drag < -100f) vm.next() else if (drag > 100f) vm.previous()
+                                    drag = 0f
+                                },
+                                onDragCancel = { drag = 0f },
+                            )
+                        },
+                ) {
+                    Box(
+                        Modifier
+                            .pointerInput(vm) {
+                                val span = size.height.toFloat().coerceAtLeast(1f)
+                                detectVerticalDragGestures(
+                                    onVerticalDrag = { change, amount ->
+                                        change.consume()
+                                        volumePct = (vm.nudgeVolume(-amount / span * 1.5f) * 100).toInt()
+                                    },
+                                )
+                            },
+                    ) {
+                        Art(t.thumb.replace(Regex("=w\\d+-h\\d+"), "=w800-h800"), artSize, corner = 26.dp)
+                        volumePct?.let { pct ->
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = Color.Black.copy(alpha = 0.65f),
+                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(
+                                        when {
+                                            pct == 0 -> Icons.Filled.VolumeOff
+                                            pct < 50 -> Icons.Filled.VolumeDown
+                                            else -> Icons.Filled.VolumeUp
+                                        },
+                                        null, Modifier.size(18.dp), tint = Color.White,
+                                    )
+                                    Text("Volume $pct%", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                                }
+                            }
+                        }
+                    }
+                }
             }
             var editLyrics by remember(t.id) { mutableStateOf(false) }
             val lyricLines = remember(vm.lyricsText) { vm.syncedLyricLines() }
@@ -1096,7 +1174,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                 plainIndex >= 0 -> plainLines.getOrNull(plainIndex)
                 else -> null
             }
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp, start = 4.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (vm.lyricsEnabled) Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp, start = 4.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f).height(24.dp), contentAlignment = Alignment.CenterStart) {
                     when {
                         lyricLines.isNotEmpty() && activeIndex < 0 -> LyricsGapDots()
@@ -1164,7 +1242,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                     }
                 }
             }
-            if (editLyrics) {
+            if (vm.lyricsEnabled && editLyrics) {
                 AlertDialog(
                     onDismissRequest = { editLyrics = false },
                     title = { Text("Lyrics") },
@@ -1242,7 +1320,8 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
         if (showOutput) OutputDevicesDialog(vm) { showOutput = false }
         if (showFx) SoundFxDialog { showFx = false }
         if (showAddTo) AddToPlaylistDialog(vm) { showAddTo = false }
-    }
+        }
+        if (showTutorial) NowPlayingTutorial(onDone = finishTutorial)
     }
 }
 
@@ -1408,6 +1487,93 @@ private fun SoundFxDialog(onDismiss: () -> Unit) {
     )
 }
 
+/** First-run coach marks for the new Now Playing gestures (once per app version). */
+@Composable
+private fun NowPlayingTutorial(onDone: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.74f))
+            .pointerInput(Unit) { detectTapGestures { onDone() } },
+    ) {
+        Column(
+            Modifier.align(Alignment.Center).padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("Welcome to Now Playing", color = Color.White, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+            Text("Two new gestures on this screen", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            NowPlayingHint(Icons.Filled.SwipeLeft, "Swipe the card left / right", "Plays the next or previous song")
+            NowPlayingHint(Icons.Filled.SwipeUp, "Swipe up / down on the album art", "Raises or lowers the volume")
+            Button(
+                onClick = onDone,
+                modifier = Modifier.padding(top = 10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.White),
+            ) { Text("Got it") }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingHint(icon: ImageVector, title: String, sub: String) {
+    Surface(shape = RoundedCornerShape(16.dp), color = Color.White.copy(alpha = 0.08f)) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(40.dp).clip(CircleShape).background(Accent), contentAlignment = Alignment.Center) {
+                Icon(icon, null, Modifier.size(22.dp), tint = Color.White)
+            }
+            Column {
+                Text(title, color = Color.White, style = MaterialTheme.typography.titleSmall)
+                Text(sub, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+/** Startup prompt when a newer GitHub release exists. */
+@Composable
+fun UpdateAvailableDialog(release: Updater.Release, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Update available") },
+        text = {
+            Column {
+                Text("Rustym ${release.tag.removePrefix("v")} is out. You are running an older version.", color = Dim)
+                if (release.notes.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text("What's new:", style = MaterialTheme.typography.titleSmall)
+                    Text(release.notes.take(600), color = Dim, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onOpen) { Text("Open release page", color = Accent) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Later", color = Dim) } },
+    )
+}
+
+private val WhatsNewFallback = """
+    • Swipe the Now Playing card left or right to change songs
+    • Swipe up or down on the album art to change the volume
+    • Lyrics can now be turned off in Settings
+    • A cleaner Settings page
+    • Rustym checks for updates automatically at startup
+""".trimIndent()
+
+/** Shown once, on the first launch after an app update. */
+@Composable
+fun WhatsNewDialog(release: Updater.Release?, versionName: String, onDismiss: () -> Unit) {
+    val notes = release?.notes?.takeIf { it.isNotBlank() } ?: WhatsNewFallback
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("What's new in Rustym $versionName") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 380.dp)) {
+                Text(notes, color = Dim, style = MaterialTheme.typography.bodyMedium)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Nice!", color = Accent) } },
+    )
+}
+
 /** Standalone "Updates" card: check GitHub releases + how-to-update instructions. */
 @Composable
 private fun UpdateCard() {
@@ -1445,32 +1611,14 @@ private fun UpdateCard() {
                 checking = true
                 updateStatus = null
                 scope.launch {
-                    val result = withContext(Dispatchers.IO) {
-                        runCatching {
-                            val c = java.net.URL("https://api.github.com/repos/Jagan-Srinivasan/Rustym-Android/releases/latest")
-                                .openConnection() as java.net.HttpURLConnection
-                            c.connectTimeout = 8000
-                            c.readTimeout = 8000
-                            c.setRequestProperty("Accept", "application/vnd.github+json")
-                            val code = c.responseCode
-                            if (code == 404) "none" to ""
-                            else if (code !in 200..299) "error" to ""
-                            else {
-                                val body = c.inputStream.bufferedReader().use { it.readText() }
-                                val obj = org.json.JSONObject(body)
-                                obj.optString("tag_name") to obj.optString("html_url")
-                            }
-                        }.getOrElse { "error" to "" }
-                    }
+                    val rel = Updater.releases(1).firstOrNull()
                     checking = false
                     when {
-                        result.first == "none" ->
-                            updateStatus = "No new release available."
-                        result.first == "error" ->
+                        rel == null ->
                             updateStatus = "Couldn't check for updates - check your connection."
-                        isNewer(result.first.removePrefix("v").removePrefix("V"), versionName) -> {
-                            updateStatus = "New version ${result.first} is available!"
-                            updateUrl = result.second.ifBlank { "https://github.com/Jagan-Srinivasan/Rustym-Android/releases/latest" }
+                        Updater.isNewer(rel.tag, versionName) -> {
+                            updateStatus = "New version ${rel.tag} is available!"
+                            updateUrl = rel.url.ifBlank { "https://github.com/Jagan-Srinivasan/Rustym-Android/releases/latest" }
                         }
                         else -> updateStatus = "No new release - you're on the latest version ($versionName)."
                     }
@@ -1546,6 +1694,24 @@ private fun SettingsChips(options: List<String>, selected: Int, onSelect: (Int) 
                 ),
             )
         }
+    }
+}
+
+/** A settings row: title + subtitle on the left, a switch on the right. */
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = if (enabled) MaterialTheme.colorScheme.onBackground else Dim)
+            Text(subtitle, color = Dim, style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
     }
 }
 
@@ -1639,24 +1805,14 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                         )
                     }
                 }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Glass effects", style = MaterialTheme.typography.titleSmall)
-                        Text("Use translucent player surfaces", color = Dim, style = MaterialTheme.typography.bodySmall)
-                    }
-                    androidx.compose.material3.Switch(checked = ThemeStore.glassEffects, onCheckedChange = ThemeStore::updateGlassEffects)
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Material You colours", style = MaterialTheme.typography.titleSmall)
-                        Text("Colours from your wallpaper (Android 12+)", color = Dim, style = MaterialTheme.typography.bodySmall)
-                    }
-                    androidx.compose.material3.Switch(
-                        checked = ThemeStore.useDynamicColors,
-                        onCheckedChange = { ThemeStore.updateDynamicColors(it) },
-                        enabled = android.os.Build.VERSION.SDK_INT >= 31,
-                    )
-                }
+                SettingsSwitchRow("Glass effects", "Use translucent player surfaces", ThemeStore.glassEffects, ThemeStore::updateGlassEffects)
+                SettingsSwitchRow(
+                    "Material You colours",
+                    "Colours from your wallpaper (Android 12+)",
+                    ThemeStore.useDynamicColors,
+                    { ThemeStore.updateDynamicColors(it) },
+                    enabled = android.os.Build.VERSION.SDK_INT >= 31,
+                )
             }
         }
 
@@ -1676,6 +1832,20 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Text("Choose where Rustym opens", color = Dim, style = MaterialTheme.typography.bodySmall)
                 val tabs = listOf("Home", "Search", "Device", "Library")
                 SettingsChips(tabs, vm.startTab.coerceIn(0, tabs.lastIndex)) { i -> vm.chooseStartTab(i) }
+            }
+        }
+
+        // ---- Lyrics ----
+        item { SectionTitle("Lyrics") }
+        item {
+            SettingsCard {
+                SettingsSwitchRow(
+                    "Show lyrics",
+                    "Fetch and display lyrics on the Now Playing screen",
+                    vm.lyricsEnabled,
+                    vm::setLyricsEnabled,
+                )
+                Text("Sources: Unison, Better Lyrics, KuGou, LRCLIB, NetEase and Lyrics.ovh.", color = Dim, style = MaterialTheme.typography.bodySmall)
             }
         }
 

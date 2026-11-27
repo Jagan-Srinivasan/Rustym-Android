@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rustym.mobile.ui.Accent
@@ -65,6 +66,9 @@ import com.rustym.mobile.ui.SignInNoticeDialog
 import com.rustym.mobile.ui.SettingsScreen
 import com.rustym.mobile.ui.Surface2
 import com.rustym.mobile.ui.Dim
+import com.rustym.mobile.ui.UpdateAvailableDialog
+import com.rustym.mobile.ui.WhatsNewDialog
+import com.rustym.mobile.Updater
 
 class MainActivity : ComponentActivity() {
     private val player: PlayerVM by viewModels()
@@ -105,6 +109,30 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
     var showLogin by remember { mutableStateOf(false) }
     var showSignInNotice by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
+    // ---- app update: auto-check at startup + "What's new" after an update ----
+    var updateRelease by remember { mutableStateOf<Updater.Release?>(null) }
+    var whatsNew by remember { mutableStateOf<Pair<String, Updater.Release?>?>(null) }
+    LaunchedEffect(Unit) {
+        val info = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull() ?: return@LaunchedEffect
+        val verCode = info.longVersionCode.toInt()
+        val verName = info.versionName.orEmpty()
+        val prefs = context.getSharedPreferences("rustym_settings", android.content.Context.MODE_PRIVATE)
+        val seen = prefs.getInt("whatsnew_seen_vc", -1)
+        val releases = Updater.releases()
+        if (seen < 0) {
+            // Fresh install: nothing is "new" compared to a previous version.
+            prefs.edit().putInt("whatsnew_seen_vc", verCode).apply()
+        } else if (verCode > seen) {
+            // First launch after an update: show the release notes for this version once.
+            whatsNew = verName to Updater.forVersion(releases, verName)
+            prefs.edit().putInt("whatsnew_seen_vc", verCode).apply()
+        }
+        releases.firstOrNull()?.let { latest ->
+            if (Updater.isNewer(latest.tag, verName)) updateRelease = latest
+        }
+    }
 
     // Android 13+: notification permission is needed to show the playback controls.
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -144,6 +172,19 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
             }
         }
         if (showPlayer) NowPlayingScreen(vm) { showPlayer = false }
+        whatsNew?.let { (ver, release) ->
+            WhatsNewDialog(release, ver) { whatsNew = null }
+        }
+        updateRelease?.let { release ->
+            UpdateAvailableDialog(
+                release = release,
+                onOpen = {
+                    updateRelease = null
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(release.url.ifBlank { "https://github.com/Jagan-Srinivasan/Rustym-Android/releases/latest" }))) }
+                },
+                onDismiss = { updateRelease = null },
+            )
+        }
         if (showSignInNotice) {
             SignInNoticeDialog(
                 onProceed = { showSignInNotice = false; showLogin = true },

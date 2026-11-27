@@ -1874,7 +1874,7 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Text("Fade length: ${vm.crossfadeValue}s", style = MaterialTheme.typography.bodySmall, color = Dim)
                 Slider(
                     value = vm.crossfadeValue.toFloat(),
-                    onValueChange = { vm.setCrossfadeValue(it.toInt()) },
+                    onValueChange = { vm.updateCrossfadeValue(it.toInt()) },
                     valueRange = 1f..8f,
                     steps = 6,
                     enabled = vm.crossfadeEnabled,

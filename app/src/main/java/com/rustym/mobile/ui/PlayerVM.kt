@@ -106,7 +106,7 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         settings.edit().putBoolean("crossfade_enabled", on).apply()
         applyCrossfade()
     }
-    fun setCrossfadeValue(seconds: Int) {
+    fun updateCrossfadeValue(seconds: Int) {
         crossfadeValue = seconds.coerceIn(1, 8)
         settings.edit().putInt("crossfade_value", crossfadeValue).apply()
         if (crossfadeEnabled) applyCrossfade()

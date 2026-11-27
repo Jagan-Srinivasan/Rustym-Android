@@ -122,7 +122,11 @@ private fun RustymRoot(vm: PlayerVM = viewModel()) {
         val seen = prefs.getInt("whatsnew_seen_vc", -1)
         val releases = Updater.releases()
         if (seen < 0) {
-            // Fresh install: nothing is "new" compared to a previous version.
+            // First run of the update-check feature itself. Distinguish a genuine
+            // update from a fresh install: an app that was installed before and
+            // replaced shows firstInstallTime != lastUpdateTime.
+            val wasUpdated = info.firstInstallTime != info.lastUpdateTime
+            if (wasUpdated) whatsNew = verName to Updater.forVersion(releases, verName)
             prefs.edit().putInt("whatsnew_seen_vc", verCode).apply()
         } else if (verCode > seen) {
             // First launch after an update: show the release notes for this version once.

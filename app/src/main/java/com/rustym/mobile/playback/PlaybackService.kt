@@ -431,7 +431,7 @@ class PlaybackService : MediaSessionService() {
      */
     private fun audibleEndMs(p: ExoPlayer, containerMs: Long): Long {
         val sec = runCatching {
-            p.currentMediaItem?.localConfiguration?.extras?.getLong("dur") ?: 0L
+            p.currentMediaItem?.mediaMetadata?.extras?.getLong("dur") ?: 0L
         }.getOrDefault(0L)
         return if (sec > 0) minOf(sec * 1000L, containerMs) else containerMs
     }

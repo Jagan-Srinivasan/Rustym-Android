@@ -1106,6 +1106,12 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val artSize = minOf(maxWidth, maxHeight) - 36.dp
                 var volumePct by remember { mutableStateOf<Int?>(null) }
+                // Blink animation for the volume-zero hint (runs only when needed).
+                val zeroPulse by rememberInfiniteTransition(label = "vol-zero").animateFloat(
+                    initialValue = 0.3f, targetValue = 1f,
+                    animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+                    label = "vol-zero-alpha",
+                )
                 LaunchedEffect(volumePct) {
                     // The zero-volume pill stays until the user swipes back up.
                     if (volumePct != null && volumePct != 0) { delay(1600); volumePct = null }
@@ -1141,7 +1147,9 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
                             Surface(
                                 shape = RoundedCornerShape(50),
                                 color = Color.Black.copy(alpha = 0.65f),
-                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
+                                modifier = Modifier.align(Alignment.BottomCenter)
+                                    .padding(bottom = 14.dp)
+                                    .graphicsLayer { alpha = if (pct == 0) zeroPulse else 1f },
                             ) {
                                 Row(
                                     Modifier.padding(horizontal = 14.dp, vertical = 8.dp),

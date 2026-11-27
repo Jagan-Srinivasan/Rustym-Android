@@ -638,14 +638,18 @@ class PlaybackService : MediaSessionService() {
                             return@launch
                         }
                     }
-                    // Fresh capture just before the main sounds: the shadow advanced
-                    // during the re-prepare, and that stretch must not be replayed.
+                    // Fresh capture just before the main sounds. The audio output
+                    // pipeline (Bluetooth especially) still holds the shadow's tail
+                    // for a while after its clock position - resuming at the raw
+                    // position replays that stretch. Skip it: resume ahead by the
+                    // pipeline depth so playback continues without repetition.
                     val s2 = shadow.currentPosition.coerceAtLeast(0L)
-                    android.util.Log.d("RustymCrossfade", "takeover: main ready after ${t}ms, shadow drifted to ${s2}ms")
-                    if (kotlin.math.abs(s2 - pos) > 60L) {
-                        android.util.Log.d("RustymCrossfade", "takeover: re-capturing at ${s2}ms")
-                        runCatching { p.seekTo(s2) }
-                    }
+                    val am = getSystemService(android.media.AudioManager::class.java)
+                    val btOut = am?.isBluetoothA2dpOn == true || am?.isBluetoothScoOn == true
+                    val guard = if (btOut) 900L else 250L
+                    val resumeAt = s2 + guard
+                    android.util.Log.d("RustymCrossfade", "takeover: main ready after ${t}ms, shadow at ${s2}ms, bt=$btOut, resuming at ${resumeAt}ms")
+                    if (kotlin.math.abs(resumeAt - pos) > 100L) runCatching { p.seekTo(resumeAt) }
                 }
                 serviceScope.launch(Dispatchers.Main) {
                     kotlinx.coroutines.delay(400)

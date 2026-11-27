@@ -642,7 +642,7 @@ class PlaybackService : MediaSessionService() {
                     // during the re-prepare, and that stretch must not be replayed.
                     val s2 = shadow.currentPosition.coerceAtLeast(0L)
                     android.util.Log.d("RustymCrossfade", "takeover: main ready after ${t}ms, shadow drifted to ${s2}ms")
-                    if (kotlin.math.abs(s2 - pos) > 300L) {
+                    if (kotlin.math.abs(s2 - pos) > 60L) {
                         android.util.Log.d("RustymCrossfade", "takeover: re-capturing at ${s2}ms")
                         runCatching { p.seekTo(s2) }
                     }
@@ -653,6 +653,10 @@ class PlaybackService : MediaSessionService() {
                 }
                 if (!p.playWhenReady) p.playWhenReady = true
                 p.volume = g
+                // Let the shadow sound ~150ms past the main's own start: its tail
+                // bridges the main's sink warm-up (short flange of identical audio
+                // beats a hole), then it bows out.
+                kotlinx.coroutines.delay(150)
                 runCatching { shadow.stop(); shadow.release() }
                 // Finish the fade-in on the main player alone.
                 val cap = if (f < 0.1f) 800L else 2_500L

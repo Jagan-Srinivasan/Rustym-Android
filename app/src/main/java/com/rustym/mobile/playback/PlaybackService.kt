@@ -381,7 +381,7 @@ class PlaybackService : MediaSessionService() {
         Player.COMMAND_SEEK_TO_DEFAULT_POSITION,
         Player.COMMAND_SEEK_BACK,
         Player.COMMAND_SEEK_FORWARD,
-        Player.COMMAND_SEEK_TO,
+        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
         Player.COMMAND_PLAY_PAUSE,
     )
 

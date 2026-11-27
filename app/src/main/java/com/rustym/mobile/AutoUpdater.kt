@@ -72,7 +72,7 @@ object AutoUpdater {
             if (!ok) return "Download failed - check your connection.".also { status = it }
 
             status = "Ready to install - confirm in the dialog…"
-            try {
+            return try {
                 stageInstall(context, apk)
                 "Rustym ${latest.tag.removePrefix("v")} is ready - tap Install in the dialog."
             } catch (e: Exception) {

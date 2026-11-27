@@ -1,16 +1,18 @@
-# Rustym v1.1.5 🎵
+# Rustym v1.1.6 🎵
 
-**Crossfade engine v4** — the artwork/title now stay on the previous song until it truly ends, and the mid-blend mute is gone.
+**Seamless handover** — the next song now continues exactly where the blend left it, instead of restarting from the beginning.
 
 ---
 
 ## 🔧 Fixed
-- **Album artwork switched too early.** The queue used to advance at the handover, while the previous song was still fading. Now the blend is inverted: the **previous song stays on the main player** (artwork, title, lyrics, progress all stay on it) and the **next song waits ready on a shadow player, held silent**. The queue only advances when the previous song has actually finished — then the next song takes over seamlessly at the exact position the blend reached
-- **The ~1s mid-blend mute.** The outgoing tail's silence-trimmer was too aggressive (−30dB) and fast-forwarded through the song's own quiet fade-out, drying the tail mid-blend. The outgoing song now never gets trimmed at all — it plays its real audio to the end on the main player
-- The blend covers the previous song's **real last N seconds** (anchored on its own clock), with the next stream resolved + buffered underneath beforehand
+- **Next song restarted from 0:00 after the blend.** Root cause: the previous song's end auto-advanced the queue mid-blend, which threw away the blend's progress. Now:
+  - the auto-advance at end-of-song is suppressed while a blend is running
+  - when the previous song has fully finished, the queue advances deliberately and the player **seeks to the exact position the fade-in reached**, continuing the song where the blend left it
+  - the remaining part of the gain curve is finished on the main player while the shadow player bows out — no jump, no restart, no gap
+- Works for every early-commit case too (song ending mid-ramp commits early and seamlessly)
 
 ## ♻️ Kept
-- Equal-power (cos/sin) DJ blending · manual skips stay instant (no crossfade) · "Crossfading…" indicator from the moment the handover starts · always starts the next song where the blend left off
+- Artwork/title stay on the previous song until it truly ends · equal-power (cos/sin) DJ blending · manual skips stay instant · "Crossfading…" indicator · previous song's audio never trimmed
 
 ---
 
@@ -19,4 +21,4 @@ Download **Rustym.apk** below, or let **Auto-update & install** do it.
 
 ---
 
-**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.1.4...v1.1.5
+**Full changelog:** https://github.com/Jagan-Srinivasan/Rustym-Android/compare/v1.1.5...v1.1.6

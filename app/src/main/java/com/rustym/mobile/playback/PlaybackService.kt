@@ -223,7 +223,9 @@ class PlaybackService : MediaSessionService() {
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .setAudioProcessors(
                         arrayOf(
-                            SilenceSkippingAudioProcessor(500_000L, 20_000L, 0.9f),
+                            // 0.5s min silence, 20ms padding kept, PCM threshold 1000 (~-30dBFS):
+                            // fast-forward through the container's silent padding.
+                            SilenceSkippingAudioProcessor(500_000L, 20_000L, 1000.toShort()),
                             EightDAudioProcessor(),
                         )
                     )

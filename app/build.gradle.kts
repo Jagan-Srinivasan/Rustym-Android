@@ -12,8 +12,8 @@ android {
         applicationId = "com.rustym.mobile"
         minSdk = 26          // Android 8.0+ : covers practically every phone in use
         targetSdk = 35
-        versionCode = 114
-        versionName = "1.1.4"
+        versionCode = 115
+        versionName = "1.1.5"
         // No native code anywhere, so a single APK runs on every CPU (arm64, armv7, x86, x86_64).
     }
 

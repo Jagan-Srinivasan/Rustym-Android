@@ -1047,6 +1047,7 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
     var showFx by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
     var showAddTo by remember { mutableStateOf(false) }
+    var crossfading by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     // Gesture tutorial: shown once per app version (after an update / first install).
@@ -1064,6 +1065,14 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
         while (true) {
             if (!dragging) { pos = vm.positionMs(); dur = vm.durationMs().coerceAtLeast(1L) }
             delay(400)
+        }
+    }
+
+    // Poll the playback service for live crossfade state.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(350)
+            vm.pollCrossfading { crossfading = it }
         }
     }
 
@@ -1296,6 +1305,24 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             Text(fmtTime(if (dragging) (dragValue * dur).toLong() else pos), color = Dim, style = MaterialTheme.typography.bodySmall)
             Box(Modifier.weight(1f))
             Text(fmtTime(dur), color = Dim, style = MaterialTheme.typography.bodySmall)
+        }
+
+        // Live blend indicator: shown while the outgoing song's tail is fading
+        // into the next one.
+        if (crossfading) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp, color = Accent)
+                Text(
+                    "Crossfading…",
+                    color = Accent,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
         }
 
         // transport

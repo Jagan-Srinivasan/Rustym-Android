@@ -127,6 +127,7 @@ class PlaybackService : MediaSessionService() {
     private const val ACTION_ROUTE_TO_DEVICE = "com.rustym.mobile.action.ROUTE_TO_DEVICE"
     private const val ACTION_CROSSFADE_NEXT = "com.rustym.mobile.action.CROSSFADE_NEXT"
     private const val ACTION_SKIP_SILENCE = "com.rustym.mobile.action.SKIP_SILENCE"
+    private const val ACTION_CROSSFADE_STATE = "com.rustym.mobile.action.CROSSFADE_STATE"
 }
     private var session: MediaSession? = null
     private lateinit var library: Library
@@ -137,6 +138,7 @@ class PlaybackService : MediaSessionService() {
     // player S carries the outgoing track's tail. Over the fade window M's volume
     // ramps up while S's ramps down, so the two songs overlap like premium players.
     private var renderersFactory: androidx.media3.exoplayer.RenderersFactory? = null
+    private var shadowRenderersFactory: androidx.media3.exoplayer.RenderersFactory? = null
     private var mediaSourceFactory: androidx.media3.exoplayer.source.MediaSource.Factory? = null
     private var crossfadePlayer: ExoPlayer? = null
     @Volatile private var crossfadeActive = false
@@ -206,6 +208,28 @@ class PlaybackService : MediaSessionService() {
                     .build()
             }
         }
+        // The crossfade tail needs a tighter version: YouTube containers often carry
+        // 1-2s of silent padding after the last audible sample, and a tail that
+        // "keeps playing" that padding is exactly the silent hole in a blend.
+        // The shadow player skips silence >= 0.5s so the tail is real audio only.
+        shadowRenderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: android.content.Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+            ): AudioSink? {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(
+                        arrayOf(
+                            SilenceSkippingAudioProcessor(500_000L, 20_000L, 0.9f),
+                            EightDAudioProcessor(),
+                        )
+                    )
+                    .build()
+            }
+        }
         val player = ExoPlayer.Builder(this, renderersFactory!!)
             .setMediaSourceFactory(mediaSourceFactory!!)
             .setAudioAttributes(
@@ -266,7 +290,8 @@ class PlaybackService : MediaSessionService() {
                     .buildUpon().add(likeCommand)
                     .add(SessionCommand(ACTION_ROUTE_TO_DEVICE, Bundle.EMPTY))
                     .add(SessionCommand(ACTION_CROSSFADE_NEXT, Bundle.EMPTY))
-                    .add(SessionCommand(ACTION_SKIP_SILENCE, Bundle.EMPTY)).build()
+                    .add(SessionCommand(ACTION_SKIP_SILENCE, Bundle.EMPTY))
+                    .add(SessionCommand(ACTION_CROSSFADE_STATE, Bundle.EMPTY)).build()
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(commands)
                     .build()
@@ -306,6 +331,10 @@ class PlaybackService : MediaSessionService() {
                         p?.seekToNextMediaItem()
                     }
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
+                if (customCommand.customAction == ACTION_CROSSFADE_STATE) {
+                    val extras = Bundle().apply { putBoolean("active", crossfadeActive) }
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS, extras))
                 }
                 if (customCommand.customAction == ACTION_SKIP_SILENCE) {
                     val on = args.getBoolean("enabled", false)
@@ -421,7 +450,9 @@ class PlaybackService : MediaSessionService() {
         val dur = p.duration
         if (dur == C.TIME_UNSET || dur <= 0) return
         val remaining = dur - p.currentPosition
-        if (remaining > 0 && remaining <= secs * 1000L) startCrossfade(p)
+        // Trigger with headroom: the incoming stream has to resolve + buffer while
+        // the tail keeps playing, so start the handover slightly early.
+        if (remaining > 0 && remaining <= secs * 1000L + 1200L) startCrossfade(p)
     }
 
     /** Overlap the outgoing track's tail (shadow player) with the incoming track (main player). */
@@ -444,7 +475,7 @@ class PlaybackService : MediaSessionService() {
         }
         crossfadeActive = true
         android.util.Log.d("RustymCrossfade", "start fade=${fadeMs}ms from pos=$startPos")
-        val shadow = ExoPlayer.Builder(this, renderersFactory!!)
+        val shadow = ExoPlayer.Builder(this, shadowRenderersFactory!!)
             .setMediaSourceFactory(mediaSourceFactory!!)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -512,9 +543,12 @@ class PlaybackService : MediaSessionService() {
                         cancelled = true
                         return@launch
                     }
+                    // Equal-power (cos/sin) gain curves - the DJ-standard blend where
+                    // the sum stays ~constant, unlike a linear crossfade.
                     val f = i.toFloat() / steps
-                    p.volume = f
-                    shadow.volume = 1f - f
+                    val angle = (f * Math.PI / 2.0).toFloat()
+                    p.volume = kotlin.math.sin(angle)
+                    shadow.volume = kotlin.math.cos(angle)
                     // NOTE: isPlaying is false while the incoming track buffers; the
                     // real "user paused" signal is playWhenReady.
                     if (!p.playWhenReady) {

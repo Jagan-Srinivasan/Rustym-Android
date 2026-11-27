@@ -384,6 +384,21 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
 
     /** Skip quiet intros / outros / long gaps between sections. Default on. */
     var skipSilence by mutableStateOf(settings.getBoolean("skip_silence", true)); private set
+    /** Ask the service (polled from the UI) whether a crossfade blend is live. */
+    fun pollCrossfading(onResult: (Boolean) -> Unit) {
+        val c = controller ?: run { onResult(false); return }
+        val future = runCatching {
+            c.sendCustomCommand(
+                androidx.media3.session.SessionCommand("com.rustym.mobile.action.CROSSFADE_STATE", android.os.Bundle.EMPTY),
+                android.os.Bundle.EMPTY,
+            )
+        }.getOrNull() ?: run { onResult(false); return }
+        future.addListener({
+            val active = runCatching { future.get().extras.getBoolean("active", false) }.getOrDefault(false)
+            onResult(active)
+        }, ContextCompat.getMainExecutor(getApplication()))
+    }
+
     fun updateSkipSilence(on: Boolean) {
         skipSilence = on
         settings.edit().putBoolean("skip_silence", on).apply()

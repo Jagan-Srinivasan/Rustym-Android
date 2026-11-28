@@ -23,6 +23,13 @@ object AudioFx {
     private var bass: BassBoost? = null
     private var virtualizer: Virtualizer? = null
 
+    // Mirror of the above, bound to the crossfade tail player's audio session. Effects are
+    // per-session, so without this the outgoing tail would suddenly play dry while the incoming
+    // song keeps the user's EQ - an obvious tone flip in the middle of a blend.
+    private var auxEqualizer: Equalizer? = null
+    private var auxBass: BassBoost? = null
+    private var auxVirtualizer: Virtualizer? = null
+
     var eqEnabled by mutableStateOf(false)
         private set
     var bandCount by mutableStateOf(0)
@@ -89,6 +96,41 @@ object AudioFx {
         }
     }
 
+    /** True when anything other than the 8D processor (which lives in the PCM chain) is live. */
+    fun effectsActive(): Boolean = eqEnabled || bassPercent > 0 || surroundPercent > 0
+
+    /** Bind a second, throw-away effect set to the crossfade tail player's session. */
+    fun attachAux(sessionId: Int) {
+        if (sessionId == 0 || !effectsActive()) return
+        runCatching {
+            auxEqualizer = Equalizer(0, sessionId).apply {
+                val saved = prefs?.getString("eq_gains", null)
+                    ?.split(',')?.mapNotNull { it.toIntOrNull() }.orEmpty()
+                if (saved.size >= numberOfBands) {
+                    for (b in 0 until numberOfBands) setBandLevel(b.toShort(), saved[b].toShort())
+                }
+                enabled = eqEnabled
+            }
+        }
+        runCatching {
+            auxBass = BassBoost(0, sessionId).apply {
+                if (strengthSupported) setStrength((bassPercent * 10).coerceIn(0, 1000).toShort())
+            }
+        }
+        runCatching {
+            auxVirtualizer = Virtualizer(0, sessionId).apply {
+                if (strengthSupported) setStrength((surroundPercent * 10).coerceIn(0, 1000).toShort())
+            }
+        }
+    }
+
+    fun releaseAux() {
+        runCatching { auxEqualizer?.enabled = false; auxEqualizer?.release() }
+        runCatching { auxBass?.enabled = false; auxBass?.release() }
+        runCatching { auxVirtualizer?.enabled = false; auxVirtualizer?.release() }
+        auxEqualizer = null; auxBass = null; auxVirtualizer = null
+    }
+
     fun setEqualizerEnabled(on: Boolean) {
         eqEnabled = on
         runCatching { equalizer?.enabled = on }
@@ -131,6 +173,7 @@ object AudioFx {
     }
 
     fun release() {
+        releaseAux()
         releaseFx()
         eightDActive = false
     }

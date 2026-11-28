@@ -83,40 +83,10 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
         .callTimeout(15, TimeUnit.SECONDS)
         .build()
     private val noLyricsMarker = "__RUSTYM_NO_SYNCED_LYRICS__"
-    var crossfadeSeconds by mutableIntStateOf(0); private set
     private var sleepJob: Job? = null
     private val settings = app.getSharedPreferences("rustym_settings", android.content.Context.MODE_PRIVATE)
     private val lyricsPrefs = app.getSharedPreferences("rustym_lyrics", android.content.Context.MODE_PRIVATE)
     private val statsPrefs = app.getSharedPreferences("rustym_stats", android.content.Context.MODE_PRIVATE)
-
-    // ---- crossfade UI state: an on/off switch plus a fade-length slider ----
-    var crossfadeEnabled by mutableStateOf(
-        settings.getBoolean("crossfade_enabled", settings.getInt("crossfade_seconds", 0) > 0)
-    ); private set
-    var crossfadeValue by mutableIntStateOf(
-        settings.getInt("crossfade_value", maxOf(settings.getInt("crossfade_seconds", 0), 4))
-    ); private set
-
-    private fun applyCrossfade() {
-        crossfadeSeconds = if (crossfadeEnabled) crossfadeValue.coerceIn(1, 8) else 0
-        settings.edit().putInt("crossfade_seconds", crossfadeSeconds).apply()
-    }
-    fun updateCrossfadeEnabled(on: Boolean) {
-        crossfadeEnabled = on
-        settings.edit().putBoolean("crossfade_enabled", on).apply()
-        // First enable (before the user ever picked a fade length) defaults to 4s.
-        if (on && !settings.getBoolean("crossfade_value_touched", false)) {
-            crossfadeValue = 4
-            settings.edit().putInt("crossfade_value", 4).apply()
-        }
-        applyCrossfade()
-    }
-    fun updateCrossfadeValue(seconds: Int) {
-        crossfadeValue = seconds.coerceIn(1, 8)
-        settings.edit().putInt("crossfade_value", crossfadeValue).apply()
-        settings.edit().putBoolean("crossfade_value_touched", true).apply()
-        if (crossfadeEnabled) applyCrossfade()
-    }
 
     /** Lyrics on/off: when off, nothing is fetched or shown on the Now Playing screen. */
     var lyricsEnabled by mutableStateOf(settings.getBoolean("lyrics_enabled", true)); private set
@@ -183,7 +153,6 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
             }
         }
         playbackSpeed = settings.getFloat("playback_speed", 1f)
-        crossfadeSeconds = settings.getInt("crossfade_seconds", 0)
         runCatching {
             val saved = JSONArray(statsPrefs.getString("play_counts", "[]"))
             for (i in 0 until saved.length()) {
@@ -361,8 +330,6 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
     }
 
     fun next() {
-        // Manual skips are instant jumps - crossfade only happens on natural
-        // transitions, when the song runs into its own fade window.
         controller?.seekToNextMediaItem()
     }
 
@@ -374,21 +341,6 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
 
     /** Skip quiet intros / outros / long gaps between sections. Default on. */
     var skipSilence by mutableStateOf(settings.getBoolean("skip_silence", true)); private set
-    /** Ask the service (polled from the UI) whether a crossfade blend is live. */
-    fun pollCrossfading(onResult: (Boolean) -> Unit) {
-        val c = controller ?: run { onResult(false); return }
-        val future = runCatching {
-            c.sendCustomCommand(
-                androidx.media3.session.SessionCommand("com.rustym.mobile.action.CROSSFADE_STATE", android.os.Bundle.EMPTY),
-                android.os.Bundle.EMPTY,
-            )
-        }.getOrNull() ?: run { onResult(false); return }
-        future.addListener({
-            val active = runCatching { future.get().extras.getBoolean("active", false) }.getOrDefault(false)
-            onResult(active)
-        }, ContextCompat.getMainExecutor(getApplication()))
-    }
-
     fun updateSkipSilence(on: Boolean) {
         skipSilence = on
         settings.edit().putBoolean("skip_silence", on).apply()
@@ -656,7 +608,7 @@ class PlayerVM(app: Application) : AndroidViewModel(app) {
 
     // ---- volume via vertical swipe on the album art ----
 
-    /** -1f = never captured yet (the crossfade routine also writes controller volume). */
+    /** -1f = never captured yet; read from the player on the first swipe. */
     var playerVolume by mutableStateOf(-1f); private set
 
     /** Nudge the player volume by [delta] (0..1 span) and return the new volume. */

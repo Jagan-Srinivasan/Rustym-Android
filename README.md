@@ -11,7 +11,7 @@ x86, x86_64) — no native code, no bloat.
 ### Playback & player
 - **Full-screen Now Playing** — 320dp artwork with rounded corners, song title + artist, heart,
   pill-shaped transport controls (previous / play / next), shuffle, repeat, playback speed
-  (0.75×–2×), crossfade on skip (0–8s) and a sleep timer.
+  (0.75×–2×) and a sleep timer.
 - **Background playback** — music keeps playing with the screen off via a Media3 media-session
   foreground service: notification controls, lock-screen controls, Bluetooth & headset buttons,
   auto-pause when headphones are unplugged.

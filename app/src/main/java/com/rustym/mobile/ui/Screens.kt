@@ -1047,7 +1047,6 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
     var showFx by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
     var showAddTo by remember { mutableStateOf(false) }
-    var crossfading by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     // Gesture tutorial: shown once per app version (after an update / first install).
@@ -1065,14 +1064,6 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
         while (true) {
             if (!dragging) { pos = vm.positionMs(); dur = vm.durationMs().coerceAtLeast(1L) }
             delay(400)
-        }
-    }
-
-    // Poll the playback service for live crossfade state.
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(350)
-            vm.pollCrossfading { crossfading = it }
         }
     }
 
@@ -1305,24 +1296,6 @@ fun NowPlayingScreen(vm: PlayerVM, onClose: () -> Unit) {
             Text(fmtTime(if (dragging) (dragValue * dur).toLong() else pos), color = Dim, style = MaterialTheme.typography.bodySmall)
             Box(Modifier.weight(1f))
             Text(fmtTime(dur), color = Dim, style = MaterialTheme.typography.bodySmall)
-        }
-
-        // Live blend indicator: shown while the outgoing song's tail is fading
-        // into the next one.
-        if (crossfading) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp, color = Accent)
-                Text(
-                    "Crossfading…",
-                    color = Accent,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
         }
 
         // transport
@@ -1892,20 +1865,6 @@ fun SettingsScreen(vm: PlayerVM, onLogin: () -> Unit) {
                 Text("Playback speed", style = MaterialTheme.typography.titleMedium)
                 val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
                 SettingsChips(speeds.map { "${it}x" }, speeds.indexOfFirst { it == vm.playbackSpeed }.coerceAtLeast(0)) { i -> vm.updatePlaybackSpeed(speeds[i]) }
-                SettingsSwitchRow(
-                    "Crossfade",
-                    "Blend the end of each song into the next one - on skips and natural ends",
-                    vm.crossfadeEnabled,
-                    vm::updateCrossfadeEnabled,
-                )
-                Text("Fade length: ${vm.crossfadeValue}s", style = MaterialTheme.typography.bodySmall, color = Dim)
-                Slider(
-                    value = vm.crossfadeValue.toFloat(),
-                    onValueChange = { vm.updateCrossfadeValue(it.toInt()) },
-                    valueRange = 1f..8f,
-                    steps = 6,
-                    enabled = vm.crossfadeEnabled,
-                )
                 Text("Sleep timer", style = MaterialTheme.typography.titleMedium)
                 val sleep = listOf(0, 15, 30, 45, 60)
                 SettingsChips(sleep.map { if (it == 0) "Off" else "${it}m" }, sleep.indexOf(vm.sleepTimerMinutes).coerceAtLeast(0)) { i -> vm.setSleepTimer(sleep[i]) }

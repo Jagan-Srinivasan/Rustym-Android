@@ -125,24 +125,14 @@ class PlaybackService : MediaSessionService() {
     companion object {
     private const val ACTION_TOGGLE_LIKE = "com.rustym.mobile.action.TOGGLE_LIKE"
     private const val ACTION_ROUTE_TO_DEVICE = "com.rustym.mobile.action.ROUTE_TO_DEVICE"
-    private const val ACTION_CROSSFADE_NEXT = "com.rustym.mobile.action.CROSSFADE_NEXT"
     private const val ACTION_SKIP_SILENCE = "com.rustym.mobile.action.SKIP_SILENCE"
-    private const val ACTION_CROSSFADE_STATE = "com.rustym.mobile.action.CROSSFADE_STATE"
 }
     private var session: MediaSession? = null
     private lateinit var library: Library
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // ---- crossfade ----
-    // The session player owns the queue and plays the incoming song from its own 0:00; a shadow
-    // player carries the outgoing song's tail. Over the blend the tail ramps down (cos) while the
-    // incoming ramps up (sin), so total power stays flat and neither song is ever restarted.
     private var renderersFactory: androidx.media3.exoplayer.RenderersFactory? = null
-    private var shadowRenderersFactory: androidx.media3.exoplayer.RenderersFactory? = null
     private var mediaSourceFactory: androidx.media3.exoplayer.source.MediaSource.Factory? = null
-    private var crossfadePlayer: ExoPlayer? = null
-    @Volatile private var crossfadeActive = false
-    @Volatile private var blendProgress = 0f
     private val silenceProcessors = mutableListOf<SilenceSkippingAudioProcessor>()
     private val favoritesListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "favorites") refreshLikeButton()
@@ -209,20 +199,6 @@ class PlaybackService : MediaSessionService() {
                     .build()
             }
         }
-        // The tail player keeps the DSP chain but not silence skipping: skipping would jump the
-        // outgoing tail forward and unanchor the blend from the song's real ending. It also keeps
-        // its processors out of silenceProcessors, which the main player alone owns.
-        shadowRenderersFactory = object : DefaultRenderersFactory(this) {
-            override fun buildAudioSink(
-                context: android.content.Context,
-                enableFloatOutput: Boolean,
-                enableAudioTrackPlaybackParams: Boolean,
-            ): AudioSink? = DefaultAudioSink.Builder(context)
-                .setEnableFloatOutput(enableFloatOutput)
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .setAudioProcessors(arrayOf(EightDAudioProcessor()))
-                .build()
-        }
         val player = ExoPlayer.Builder(this, renderersFactory!!)
             .setMediaSourceFactory(mediaSourceFactory!!)
             .setAudioAttributes(
@@ -259,36 +235,9 @@ class PlaybackService : MediaSessionService() {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 AudioFx.attach(audioSessionId)
             }
-
-            /**
-             * A seek during a blend means the listener moved on their own, which makes the running
-             * ramp meaningless. Our own hand-over seek is expected and filtered out by index.
-             */
-            override fun onPositionDiscontinuity(
-                oldPosition: Player.PositionInfo,
-                newPosition: Player.PositionInfo,
-                reason: Int,
-            ) {
-                if (reason != Player.DISCONTINUITY_REASON_SEEK &&
-                    reason != Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
-                ) return
-                if (handoverPending && newPosition.mediaItemIndex == blendInIndex) {
-                    handoverPending = false
-                    return
-                }
-                if (crossfadeActive) externalSeek = true
-            }
         })
         AudioFx.init(this)
         AudioFx.attach(player.audioSessionId)
-
-        // Crossfade ticker: watches for tracks approaching their end every 200ms.
-        serviceScope.launch(Dispatchers.Main) {
-            while (true) {
-                kotlinx.coroutines.delay(200)
-                (session?.player as? ExoPlayer)?.let { maybeCrossfade(it) }
-            }
-        }
 
         val likeCommand = SessionCommand(ACTION_TOGGLE_LIKE, Bundle.EMPTY)
         library = Library(this)
@@ -301,9 +250,8 @@ class PlaybackService : MediaSessionService() {
                 val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
                     .buildUpon().add(likeCommand)
                     .add(SessionCommand(ACTION_ROUTE_TO_DEVICE, Bundle.EMPTY))
-                    .add(SessionCommand(ACTION_CROSSFADE_NEXT, Bundle.EMPTY))
                     .add(SessionCommand(ACTION_SKIP_SILENCE, Bundle.EMPTY))
-                    .add(SessionCommand(ACTION_CROSSFADE_STATE, Bundle.EMPTY)).build()
+                    .build()
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(commands)
                     .build()
@@ -332,21 +280,6 @@ class PlaybackService : MediaSessionService() {
                         }
                     }
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
-                }
-                if (customCommand.customAction == ACTION_CROSSFADE_NEXT) {
-                    // Manual "next" uses the same true crossfade as natural track end.
-                    val p = session.player as? ExoPlayer
-                    if (p != null && crossfadeSeconds() > 0 && p.hasNextMediaItem()) {
-                        if (crossfadeActive) cancelCrossfade(p)
-                        startCrossfade(p, manual = true)
-                    } else {
-                        p?.seekToNextMediaItem()
-                    }
-                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
-                }
-                if (customCommand.customAction == ACTION_CROSSFADE_STATE) {
-                    val extras = Bundle().apply { putBoolean("active", crossfadeActive) }
-                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS, extras))
                 }
                 if (customCommand.customAction == ACTION_SKIP_SILENCE) {
                     val on = args.getBoolean("enabled", false)
@@ -407,7 +340,6 @@ class PlaybackService : MediaSessionService() {
             }
             PlayerWidget.ACTION_NEXT -> {
                 if (p != null && p.hasNextMediaItem()) {
-                    if (crossfadeActive) cancelCrossfade(p as? ExoPlayer)
                     p.seekToNextMediaItem()
                     if (!p.isPlaying) p.play()
                     updateWidget(p)
@@ -415,7 +347,6 @@ class PlaybackService : MediaSessionService() {
             }
             PlayerWidget.ACTION_PREV -> {
                 if (p != null) {
-                    if (crossfadeActive) cancelCrossfade(p as? ExoPlayer)
                     p.seekToPreviousMediaItem()
                     if (!p.isPlaying) p.play()
                     updateWidget(p)
@@ -426,289 +357,14 @@ class PlaybackService : MediaSessionService() {
         return super.onStartCommand(intent, flags, startId)
     }
 
-    private fun crossfadeSeconds(): Int =
-        getSharedPreferences("rustym_settings", MODE_PRIVATE).getInt("crossfade_seconds", 0)
-
     private fun skipSilenceEnabled(): Boolean =
         getSharedPreferences("rustym_settings", MODE_PRIVATE).getBoolean("skip_silence", true)
 
-    /** Flip skip-silence on every audio sink (each player has its own). A seek flushes
-     * the sink so the new state applies immediately. */
+    /** Flip skip-silence on the player's audio sink. A seek flushes the sink so the new
+     * state applies immediately. */
     private fun toggleSkipSilence(on: Boolean) {
         silenceProcessors.forEach { runCatching { it.setEnabled(on) } }
         session?.player?.let { p -> runCatching { p.seekTo(p.currentPosition) } }
-    }
-
-    /**
-     * YouTube stream containers often run a few seconds longer than the song's
-     * real (audible) length. The track metadata carries the audible duration -
-     * anchor the fade window on it so the blend covers the song's real ending.
-     */
-    private fun audibleEndMs(p: ExoPlayer, containerMs: Long): Long {
-        val sec = runCatching {
-            p.currentMediaItem?.mediaMetadata?.extras?.getLong("dur") ?: 0L
-        }.getOrDefault(0L)
-        return if (sec > 0) minOf(sec * 1000L, containerMs) else containerMs
-    }
-
-    // ---- crossfade scheduling ----
-    /** How far ahead of the fade window the tail player is built, so no network wait ever sits
-     *  inside the audible blend. */
-    private val prepLeadMs = 3_500L
-    /** Shortest blend worth running; below this the fade trades places with its own artifacts. */
-    private val minRampMs = 600L
-    /** Longest wait for proof that the tail player is really rendering before audio moves to it. */
-    private val handoverConfirmMs = 900L
-
-    @Volatile private var attemptKey = ""
-    @Volatile private var baseVolume = 1f
-    @Volatile private var blendInIndex = -1
-    @Volatile private var handoverPending = false
-    @Volatile private var externalSeek = false
-
-    private fun maybeCrossfade(p: ExoPlayer) {
-        val secs = crossfadeSeconds()
-        if (secs <= 0) {
-            if (crossfadeActive) cancelCrossfade(p)
-            return
-        }
-        // While a blend runs, the blend coroutine itself supervises it - no second watcher.
-        if (crossfadeActive) return
-        if (p.currentPosition < 2000L) attemptKey = ""     // a new song gets one attempt again
-        if (!p.hasNextMediaItem() || !p.isPlaying || p.repeatMode == Player.REPEAT_MODE_ONE) return
-        val dur = p.duration
-        if (dur == C.TIME_UNSET || dur <= 0) return
-        val key = "${p.currentMediaItemIndex}:${p.currentMediaItem?.mediaId}"
-        if (key == attemptKey) return                      // a skipped fade must not retry every 200ms
-        val remaining = audibleEndMs(p, dur) - p.currentPosition
-        if (remaining in 1..(secs * 1000L + prepLeadMs)) {
-            attemptKey = key
-            startCrossfade(p, manual = false)
-        }
-    }
-
-    /**
-     * Crossfade with no hand-off and no silent window.
-     *
-     * The main player owns the queue, the session and the *incoming* song; the shadow player only
-     * ever carries the outgoing song's tail. That ordering matters: the incoming song is started
-     * once, at its own 0:00, and never seeked or restarted, so no part of it can be heard twice.
-     *
-     * The blend is anchored to the song's real (audible) end, not to wall-clock time, so it always
-     * finishes exactly when the music does - even when buffering makes it shorter than requested.
-     */
-    private fun startCrossfade(p: ExoPlayer, manual: Boolean) {
-        if (crossfadeActive) return
-        val outIndex = p.currentMediaItemIndex
-        val inIndex = p.nextMediaItemIndex
-        val outItem = p.currentMediaItem
-        if (outItem == null || inIndex == C.INDEX_UNSET || inIndex == outIndex) {
-            if (manual) p.seekToNextMediaItem()
-            return
-        }
-        val dur = p.duration
-        if (dur == C.TIME_UNSET || dur <= 0) {
-            if (manual) p.seekToNextMediaItem()
-            return
-        }
-        val posNow = p.currentPosition
-        val audibleEnd = audibleEndMs(p, dur)
-        val fadeMs = (crossfadeSeconds() * 1000L).coerceIn(500L, 10_000L)
-        if (audibleEnd - posNow < minRampMs) {
-            if (manual) p.seekToNextMediaItem()
-            return
-        }
-        val fadeStart = if (manual) posNow else maxOf(audibleEnd - fadeMs, posNow)
-        val fadeEnd = minOf(audibleEnd, fadeStart + fadeMs)
-        baseVolume = p.volume
-        val shadow = newShadowPlayer(outItem, fadeStart) ?: run {
-            if (manual) p.seekToNextMediaItem()
-            return
-        }
-        crossfadePlayer = shadow
-        crossfadeActive = true
-        blendProgress = 0f
-        blendInIndex = inIndex
-        externalSeek = false
-        handoverPending = false
-        android.util.Log.d(
-            "RustymCrossfade",
-            "plan window=${fadeStart}..${fadeEnd}ms fade=${fadeMs}ms now=${posNow}ms vol=${baseVolume} manual=$manual",
-        )
-        serviceScope.launch(Dispatchers.Main) {
-            runBlend(p, shadow, outIndex, inIndex, fadeStart, fadeEnd)
-        }
-    }
-
-    /** The tail carrier: same stream pipeline, no audio focus (it must never interrupt the session),
-     *  no silence skipping (it would jump the tail forward and unanchor the blend). */
-    private fun newShadowPlayer(
-        item: androidx.media3.common.MediaItem,
-        startPositionMs: Long,
-    ): ExoPlayer? {
-        val shadow = runCatching {
-            ExoPlayer.Builder(this, shadowRenderersFactory!!)
-                .setMediaSourceFactory(mediaSourceFactory!!)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                        .setUsage(C.USAGE_MEDIA)
-                        .build(),
-                    /* handleAudioFocus = */ false,
-                )
-                .setHandleAudioBecomingNoisy(false)
-                .setWakeMode(C.WAKE_MODE_NETWORK)
-                .build()
-        }.getOrNull() ?: return null
-        shadow.volume = baseVolume
-        shadow.playWhenReady = false
-        shadow.setMediaItem(item, startPositionMs)
-        shadow.prepare()
-        AudioFx.attachAux(shadow.audioSessionId)
-        return shadow
-    }
-
-    private suspend fun runBlend(
-        p: ExoPlayer,
-        shadow: ExoPlayer,
-        outIndex: Int,
-        inIndex: Int,
-        fadeStart: Long,
-        fadeEnd: Long,
-    ) {
-        val base = baseVolume
-        var blendEnd = fadeEnd
-
-        /** The outgoing song must still be the one the main player holds. */
-        fun stillOnTail() = p.currentMediaItemIndex == outIndex
-
-        /** Anything abandoned before audio actually moves over is not a lost fade: allow a retry. */
-        fun giveUp() {
-            attemptKey = ""
-        }
-
-        try {
-            // 1. Buffer the tail while the main player is still the audible one.
-            var waited = 0L
-            while (shadow.playbackState != Player.STATE_READY) {
-                if (shadow.playbackState == Player.STATE_IDLE) return giveUp()
-                if (!stillOnTail()) return giveUp()
-                // Window gone (the song was scrubbed past it): let the queue advance by itself.
-                if (fadeEnd - p.currentPosition < minRampMs) return giveUp()
-                kotlinx.coroutines.delay(25)
-                waited += 25
-            }
-            android.util.Log.d("RustymCrossfade", "tail ready in ${waited}ms")
-            // 2. Hold the shadow parked until the song reaches its own fade window. Starting it
-            //    here would play the tail twice, so only the pause state is mirrored.
-            while (p.currentPosition < fadeStart) {
-                if (!stillOnTail()) return giveUp()
-                if (!p.playWhenReady) shadow.playWhenReady = false
-                kotlinx.coroutines.delay(15)
-            }
-            // 3. Hand the tail over. Audio moves to the shadow only once it is *proven* to be
-            //    rendering - muting the main player before that is exactly what left a gap.
-            val handoverAt = p.currentPosition
-            shadow.volume = base
-            shadow.playWhenReady = p.playWhenReady
-            var confirmed = false
-            var probe = 0L
-            while (probe < handoverConfirmMs) {
-                if (p.currentMediaItemIndex != outIndex) return giveUp()
-                if (shadow.isPlaying && shadow.currentPosition > handoverAt + 25L) {
-                    confirmed = true
-                    break
-                }
-                kotlinx.coroutines.delay(15)
-                probe += 15
-            }
-            if (!confirmed) {
-                android.util.Log.d("RustymCrossfade", "handover unconfirmed: song plays out, no fade")
-                return giveUp()
-            }
-            p.volume = 0f
-            handoverPending = true
-            p.seekToNextMediaItem()
-            if (!p.playWhenReady) p.playWhenReady = true
-            android.util.Log.d("RustymCrossfade", "handed over at ${handoverAt}ms, incoming -> idx ${inIndex}")
-            // 4. Equal-power blend, clocked by the tail's own media position.
-            var anchor = -1L
-            while (true) {
-                if (crossfadePlayer !== shadow) return            // cancelCrossfade took charge
-                if (p.currentMediaItemIndex != inIndex) return     // manual skip or queue edit
-                val sp = shadow.currentPosition
-                if (externalSeek) {
-                    // The new song was scrubbed: close the blend fast instead of cutting it, and
-                    // never let the tail be heard over a position it no longer matches.
-                    externalSeek = false
-                    blendEnd = (sp + 320L).coerceAtLeast(anchor.coerceAtLeast(sp))
-                    if (anchor < 0L) anchor = sp
-                    android.util.Log.d("RustymCrossfade", "seek during blend: closing over ${blendEnd - sp}ms")
-                }
-                if (p.playWhenReady && !shadow.playWhenReady) shadow.playWhenReady = true
-                if (!p.playWhenReady && shadow.playWhenReady) shadow.playWhenReady = false
-                if (anchor < 0L && sp >= blendEnd - 1L) {
-                    // The tail is done and the incoming never started: better to let the song play
-                    // out than to fade out into a pipeline that has nothing to show for it.
-                    android.util.Log.d("RustymCrossfade", "no blend: incoming silent to the end")
-                    break
-                }
-                if (anchor < 0L) {
-                    // Begin as soon as the incoming is really sounding, using whatever of the
-                    // requested window is left. A short blend beats a silent one, and a blend that
-                    // fades into a still-buffering player throws the song's ending away.
-                    val room = blendEnd - sp
-                    if (p.isPlaying && room > 120L) {
-                        anchor = maxOf(sp, blendEnd - minOf(minRampMs, room)).coerceAtMost(blendEnd - 1L)
-                        android.util.Log.d(
-                            "RustymCrossfade",
-                            "blend from ${anchor}ms over ${blendEnd - anchor}ms (requested ${fadeEnd - fadeStart}ms)",
-                        )
-                    }
-                }
-                if (anchor >= 0L) {
-                    val prog = ((sp - anchor).toFloat() / (blendEnd - anchor).coerceAtLeast(1L))
-                        .coerceIn(0f, 1f)
-                    blendProgress = prog
-                    val angle = (prog * Math.PI / 2.0).toFloat()
-                    p.volume = base * kotlin.math.sin(angle)
-                    shadow.volume = base * kotlin.math.cos(angle)
-                    if (prog >= 1f || shadow.playbackState == Player.STATE_ENDED) break
-                }
-                kotlinx.coroutines.delay(15)
-            }
-        } catch (e: Exception) {
-            android.util.Log.d("RustymCrossfade", "blend aborted: ${e.message}")
-        } finally {
-            if (crossfadePlayer === shadow) {
-                android.util.Log.d("RustymCrossfade", "blend released")
-                crossfadePlayer = null
-                blendProgress = 0f
-                runCatching { shadow.stop(); shadow.release() }
-                AudioFx.releaseAux()
-                p.volume = baseVolume
-            }
-            crossfadeActive = false
-            handoverPending = false
-            blendInIndex = -1
-        }
-    }
-
-    /** Drop the tail player and hand volume back to the main player (skip, seek, disable). */
-    private fun cancelCrossfade(p: ExoPlayer?) {
-        if (!crossfadeActive) return
-        android.util.Log.d("RustymCrossfade", "cancelled")
-        val shadow = crossfadePlayer
-        crossfadePlayer = null
-        crossfadeActive = false
-        blendProgress = 0f
-        blendInIndex = -1
-        handoverPending = false
-        externalSeek = false
-        attemptKey = ""
-        if (shadow != null) runCatching { shadow.stop(); shadow.release() }
-        AudioFx.releaseAux()
-        p?.volume = baseVolume
     }
 
     private fun prefetchNext(player: Player) {
@@ -728,7 +384,6 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         AudioFx.release()
-        cancelCrossfade(session?.player as? ExoPlayer)
         serviceScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         getSharedPreferences("library", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(favoritesListener)
         session?.run {
